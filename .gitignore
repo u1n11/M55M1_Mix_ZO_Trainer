@@ -1,0 +1,6 @@
+*.clangd
+*.i
+*.lst
+*.d
+*.o
+release
