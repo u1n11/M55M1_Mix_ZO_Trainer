@@ -7,7 +7,7 @@
 
   <Targets>
     <Target>
-      <TargetName>Mix ZO Trainer</TargetName>
+      <TargetName>ImageClassification</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
       <pCCUsed>6240000::V6.24::ARMCLANG</pCCUsed>
@@ -18,7 +18,7 @@
           <Vendor>Nuvoton</Vendor>
           <PackID>Nuvoton.NuMicroM55_DFP.3.1.4-rc.3</PackID>
           <PackURL>https://github.com/OpenNuvoton/cmsis-packs/raw/master/Nuvoton_DFP/</PackURL>
-          <Cpu>IRAM(0x20100000,0x150000) IRAM2(0x30100000,0x150000) IROM(0x00100000,0x200000) IROM2(0x10100000,0x200000) CPUTYPE("Cortex-M55") FPU3(DFPU) DSP TZ MVE(FP) CLOCK(12000000) ESEL ELITTLE IROM3(0x0F100000,0x00002000)</Cpu>
+          <Cpu>IRAM(0x20100000,0x150000) IRAM2(0x30100000,0x150000) IROM(0x00100000,0x200000) IROM2(0x10100000,0x200000) CPUTYPE("Cortex-M55") FPU3(DFPU) DSP TZ MVE(FP) CLOCK(12000000) ESEL ELITTLE</Cpu>
           <FlashUtilSpec></FlashUtilSpec>
           <StartupFile></StartupFile>
           <FlashDriverDll>UL2V8M(-S0 -C0 -P0 -FD20000000 -FC8000 -FN2 -FF0M55M1_AP_2M -FS0100000 -FL0200000 -FF1M55M1_NS -FS110100000 -FL1200000 -FP0($$Device:M55M1H2LJAE$Flash\M55M1_AP_2M.FLM) -FP1($$Device:M55M1H2LJAE$Flash\M55M1_NS.FLM))</FlashDriverDll>
@@ -314,7 +314,7 @@
           </ArmAdsMisc>
           <Cads>
             <interw>1</interw>
-            <Optim>3</Optim>
+            <Optim>7</Optim>
             <oTime>0</oTime>
             <SplitLS>0</SplitLS>
             <OneElfS>1</OneElfS>
@@ -337,10 +337,10 @@
             <v6WtE>0</v6WtE>
             <v6Rtti>0</v6Rtti>
             <VariousControls>
-              <MiscControls>-Wconditional-uninitialized</MiscControls>
-              <Define>NVT_VECTOR_ON_FLASH, TF_LITE_STATIC_MEMORY, ARM_MATH_DSP, ARM_NPU, ACTIVATION_BUF_SZ=0x000D0000</Define>
+              <MiscControls></MiscControls>
+              <Define>NVT_VECTOR_ON_FLASH, TF_LITE_STATIC_MEMORY, ARM_MATH_DSP, ARM_NPU, ACTIVATION_BUF_SZ=0x000D0000, CPU_ACTIVATION_BUF_SZ=0x00800000</Define>
               <Undefine></Undefine>
-              <IncludePath>..\..\..\..\Library\CMSIS\Core\Include;..\..\..\..\Library\Device\Nuvoton\M55M1\Include;..\..\..\..\Library\CMSIS\DSP\Include;..\..\..\..\Library\StdDriver\inc;..\..\..\..\Library\StdDriver\inc\npu;..\..\..\..\ThirdParty\openmv\omv\imlib;..\..\..\..\ThirdParty\openmv\omv\alloc;..\..\..\..\ThirdParty\openmv\omv\common;..\..\..\..\ThirdParty\openmv\omv\Lib;..\..\..\..\ThirdParty\tflite_micro;..\..\..\..\ThirdParty\tflite_micro\_deps\tensorflow-flatbuffers-src\include;..\..\..\..\ThirdParty\tflite_micro\_deps\tensorflow-gemlowp-src;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\application\api\common\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\log\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\math\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\application\main\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\profiler\include;..\Device\include;..\Model\include;..\NPU\include;..\Pattern\include;..\ProfilerCounter\include;..\</IncludePath>
+              <IncludePath>..\..\..\..\Library\CMSIS\Core\Include;..\..\..\..\Library\Device\Nuvoton\M55M1\Include;..\..\..\..\Library\CMSIS\DSP\Include;..\..\..\..\Library\StdDriver\inc;..\..\..\..\Library\StdDriver\inc\npu;..\..\..\..\ThirdParty\openmv\omv\imlib;..\..\..\..\ThirdParty\openmv\omv\alloc;..\..\..\..\ThirdParty\openmv\omv\common;..\..\..\..\ThirdParty\openmv\omv\Lib;..\..\..\..\ThirdParty\tflite_micro;..\..\..\..\ThirdParty\tflite_micro\_deps\tensorflow-flatbuffers-src\include;..\..\..\..\ThirdParty\tflite_micro\_deps\tensorflow-gemlowp-src;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\application\api\common\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\log\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\math\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\application\main\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\profiler\include;..\Device\include;..\Model\include;..\NPU\include;..\ProfilerCounter\include;..\;..\uart\include;..\..\..\..\ThirdParty\tflite_micro\tensorflow\lite\micro\kernels\cmsis_nn;..\..\..\..\Library\CMSIS\NN</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -469,6 +469,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\..\..\Library\StdDriver\src\pdma.c</FilePath>
             </File>
+            <File>
+              <FileName>fmc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\..\Library\StdDriver\src\fmc.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -507,12 +512,12 @@
             <File>
               <FileName>cmsis_dsp.lib</FileName>
               <FileType>4</FileType>
-              <FilePath>..\..\..\..\Library\CMSIS\Lib\Keil\cmsis_dsp.lib</FilePath>
+              <FilePath>..\..\..\..\Library\CMSIS\Lib\KEIL\cmsis_dsp.lib</FilePath>
             </File>
             <File>
               <FileName>cmsis_nn.lib</FileName>
               <FileType>4</FileType>
-              <FilePath>..\..\..\..\Library\CMSIS\Lib\Keil\cmsis_nn.lib</FilePath>
+              <FilePath>..\..\..\..\Library\CMSIS\Lib\KEIL\cmsis_nn.lib</FilePath>
             </File>
             <File>
               <FileName>omv.lib</FileName>
@@ -535,39 +540,29 @@
               <FilePath>..\Model\MobileNetModel.cpp</FilePath>
             </File>
             <File>
-              <FileName>mobilenet_v2_224_035_int8quant_vela_H256.tflite.cpp</FileName>
+              <FileName>inference_mngt.cpp</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Model\mobilenet_v2_224_035_int8quant_vela_H256.tflite.cpp</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Pattern</GroupName>
-          <Files>
-            <File>
-              <FileName>InputFiles.cpp</FileName>
-              <FileType>8</FileType>
-              <FilePath>..\Pattern\InputFiles.cpp</FilePath>
+              <FilePath>..\Model\inference_mngt.cpp</FilePath>
             </File>
             <File>
-              <FileName>cat.cpp</FileName>
+              <FileName>ZOTrainer.cpp</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Pattern\cat.cpp</FilePath>
+              <FilePath>..\Model\ZOTrainer.cpp</FilePath>
             </File>
             <File>
-              <FileName>dog.cpp</FileName>
+              <FileName>student035_kd_v2_cls_int8.tflite.cc</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Pattern\dog.cpp</FilePath>
+              <FilePath>..\Model\CPU_NPU_mixed\student035_kd_v2_cls_int8.tflite.cc</FilePath>
             </File>
             <File>
-              <FileName>kimono.cpp</FileName>
+              <FileName>student035_kd_v2_fe_int8_vela.tflite.cc</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Pattern\kimono.cpp</FilePath>
+              <FilePath>..\Model\CPU_NPU_mixed\student035_kd_v2_fe_int8_vela.tflite.cc</FilePath>
             </File>
             <File>
-              <FileName>tiger.cpp</FileName>
+              <FileName>student035_kd_v2_int8.tflite.cc</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Pattern\tiger.cpp</FilePath>
+              <FilePath>..\Model\CPU_only\student035_kd_v2_int8.tflite.cc</FilePath>
             </File>
           </Files>
         </Group>
@@ -670,16 +665,6 @@
               <FilePath>..\Device\Display\Font8_16.c</FilePath>
             </File>
             <File>
-              <FileName>LCD_FSA506.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Device\Display\LCD\LCD_FSA506.c</FilePath>
-            </File>
-            <File>
-              <FileName>LCD_ILI9341.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Device\Display\LCD\LCD_ILI9341.c</FilePath>
-            </File>
-            <File>
               <FileName>descriptors.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Device\UVC\descriptors.c</FilePath>
@@ -698,6 +683,31 @@
               <FileName>drv_pdma.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Device\Display\drv_pdma.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>uart</GroupName>
+          <Files>
+            <File>
+              <FileName>uart_cmd.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\uart\uart_cmd.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>LogConfig.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\LogConfig.cpp</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>ThirdParity_cmsis_nn</GroupName>
+          <Files>
+            <File>
+              <FileName>conv.cc</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\..\..\..\ThirdParty\tflite_micro\tensorflow\lite\micro\kernels\cmsis_nn\conv.cc</FilePath>
             </File>
           </Files>
         </Group>

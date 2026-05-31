@@ -13,6 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+/* Ensure CMSIS_NN is defined so conv.h emits declarations (not inline defs) */
+#ifndef CMSIS_NN
+#define CMSIS_NN
+#endif
+
 #include "tensorflow/lite/micro/kernels/conv.h"
 
 #include "Include/arm_nnfunctions.h"
@@ -43,6 +48,7 @@ void* Init(TfLiteContext* context, const char* buffer, size_t length) {
 }
 
 TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
+  MicroPrintf("[CONV2D] Using PATCHED Prepare (1D bias OK)");
   TFLITE_DCHECK(node->user_data != nullptr);
   TFLITE_DCHECK(node->builtin_data != nullptr);
 
@@ -63,7 +69,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
       micro_context->AllocateTempOutputTensor(node, kConvOutputTensor);
   TF_LITE_ENSURE(context, output != nullptr);
   TfLiteTensor* bias =
-      micro_context->AllocateTempOutputTensor(node, kConvBiasTensor);
+      micro_context->AllocateTempInputTensor(node, kConvBiasTensor);
   TfLiteType bias_type = bias != nullptr ? bias->type : kTfLiteNoType;
 
   TF_LITE_ENSURE_EQ(context, input->type, output->type);
@@ -89,7 +95,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TFLITE_DCHECK_EQ(output->dims->data[3] % groups, 0);
   // Bias size equal to output channels
   if (bias != nullptr) {
-    TF_LITE_ENSURE_EQ(context, bias->dims->size, 4);
+    TF_LITE_ENSURE(context, bias->dims->size == 1 || bias->dims->size == 4);
     const int bias_size = NumElements(bias->dims);
     TFLITE_DCHECK_EQ(bias_size, output->dims->data[3]);
   }

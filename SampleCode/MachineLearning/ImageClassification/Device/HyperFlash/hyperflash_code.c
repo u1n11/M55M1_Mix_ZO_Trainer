@@ -598,3 +598,291 @@ void SPIM_HyperFlash_Init(SPIM_T *pSPIMx)
 
     SPIM_HYPER_EnterDirectMapMode(pSPIMx);
 }
+
+/*---------------------------------------------------------------------------*/
+/*  HyperRAM Initialisation                                                  */
+/*---------------------------------------------------------------------------*/
+
+/* HyperRAM timing constants (Winbond W958D8NBYA / Infineon S27KS0642) */
+#define HYPERRAM_CSM_TIME           4000    /* tCSM in nanoseconds */
+#define HYPERRAM_RD_LTCY            7       /* Initial read latency (clock cycles) */
+#define HYPERRAM_WR_LTCY            7       /* Initial write latency (clock cycles) */
+#define HYPERRAM_CSHI_CYCLE         4       /* CS High time between transactions */
+#define HYPERRAM_RST_CNT            0xFF    /* RESETN low time */
+#define CSMAXLT_CIPHER_OFF          21      /* CSMAXLT overhead when cipher is off */
+#define CSMAXLT_CIPHER_ON           54      /* CSMAXLT overhead when cipher is on */
+
+/* DLL trimming parameters */
+#define HRAM_TRIM_SAFE_OFFSET       0x10000 /* Trim at safe offset (not addr 0) */
+#define HRAM_TRIM_SIZE              512     /* Must be divisible by 8 */
+#define DLL_TRIM_MAX_RETRY          10
+#define DLL_TRIM_PASS_COUNT         3
+#define DLL_TRIM_SCORE_PER_BLOCK    8
+#define DLL_TRIM_JUMP_STEP_1        0x08
+#define DLL_TRIM_JUMP_STEP_2        0x10
+#define DLL_TRIM_DEF_NUM            0x07
+#define DMM_VERIFY_MAX_RETRY        3
+
+/* HyperRAM register structure (for CONFIG0 drive strength) */
+typedef struct
+{
+    union
+    {
+        uint32_t u32REG;
+        struct
+        {
+            uint32_t u2BurstLength         : 2;
+            uint32_t u1HybridBurstEnable   : 1;
+            uint32_t u1FixedLatencyEnable  : 1;
+            uint32_t u4InitialLatency      : 4;
+            uint32_t u4Reserved            : 4;
+            uint32_t u3DriveStrength       : 3;
+            uint32_t u1DeepPowerDownEnable : 1;
+            uint32_t                       : 16;
+        };
+    } CONFIG0;
+} HRAM_REG_T;
+
+/**
+ * @brief  Compute CSMAXLT from tCSM (ns), system clock, and cipher state,
+ *         then program all HyperBus timing registers for HyperRAM.
+ */
+static void SPIM_HyperRAM_DefaultConfig(SPIM_T *spim,
+                                        uint32_t u32CSM,
+                                        uint32_t u32AcctRD,
+                                        uint32_t u32AcctWR)
+{
+    uint32_t u32CoreFreq  = CLK_GetSCLKFreq() / 1000000;   /* MHz */
+    float    fPeriod_ns   = 1000.0f / (float)u32CoreFreq;  /* ns per cycle */
+    uint32_t u32DIV       = SPIM_HYPER_GET_CLKDIV(spim);
+    uint32_t u32CipherEn  = SPIM_HYPER_GET_CIPHER(spim);
+    uint32_t u32CSMAXLT   = (uint32_t)((u32CSM / fPeriod_ns)
+                            - (2U * 8U * u32DIV)
+                            - ((!u32CipherEn == SPIM_HYPER_OP_ENABLE)
+                               ? CSMAXLT_CIPHER_ON : CSMAXLT_CIPHER_OFF));
+
+    SPIM_HYPER_SET_CSST(spim,    SPIM_HYPER_CSST_3_5_HCLK);
+    SPIM_HYPER_SET_CSH(spim,     SPIM_HYPER_CSH_3_5_HCLK);
+    SPIM_HYPER_SET_CSHI(spim,    HYPERRAM_CSHI_CYCLE);
+    SPIM_HYPER_SET_CSMAXLT(spim, u32CSMAXLT);
+    SPIM_HYPER_SET_RSTNLT(spim,  HYPERRAM_RST_CNT);
+    SPIM_HYPER_SET_ACCTRD(spim,  u32AcctRD);
+    SPIM_HYPER_SET_ACCTWR(spim,  u32AcctWR);
+}
+
+/* --- DLL Trimming helper patterns --- */
+static void GenPRBS7Pattern(uint8_t *buf, uint32_t size)
+{
+    uint8_t prbs = 0x5A;
+    for (uint32_t i = 0; i < size; i++)
+    {
+        buf[i] = prbs;
+        prbs = (prbs >> 1) ^ ((prbs & 1) ? 0xB8 : 0x00);
+    }
+}
+
+static void GenWalking1sPattern(uint8_t *buf, uint32_t size)
+{
+    for (uint32_t i = 0; i < size; i++)
+        buf[i] = (uint8_t)(1u << (i % 8));
+}
+
+static void GenOriginalPattern(uint8_t *buf, uint32_t size)
+{
+    for (uint32_t k = 0; k < size; k++)
+    {
+        uint32_t val = (k & 0x0F) ^ (k >> 4) ^ (k >> 3);
+        if (k & 1) val = ~val;
+        buf[k] = ~(uint8_t)(val ^ (k << 3) ^ (k >> 2));
+    }
+}
+
+static int VerifyFinalRead_RAM(SPIM_T *spim, uint32_t dmmAddr,
+                               uint8_t *expected, uint32_t size)
+{
+    SPIM_HYPER_EnterDirectMapMode(spim);
+
+    for (uint32_t i = 0; i + 8 <= size; i += 8)
+    {
+        __IO uint64_t *p = (__IO uint64_t *)(dmmAddr + i);
+        uint64_t val = *p;
+        if (memcmp(&expected[i], &val, 8) != 0)
+        {
+            SPIM_HYPER_ExitDirectMapMode(spim);
+            return 0;
+        }
+    }
+
+    SPIM_HYPER_ExitDirectMapMode(spim);
+    return 1;
+}
+
+/**
+ * @brief  Robust DLL delay trimming for HyperRAM.
+ *         Uses three patterns and a scoring scheme to find the
+ *         best DLL delay step, then verifies via DMM.
+ */
+static void HyperRAM_TrimDLLDelayNumber(SPIM_T *spim)
+{
+    uint8_t  u8RdDelay = 0;
+    uint16_t u16Score[SPIM_HYPER_MAX_LATENCY] = {0};
+    uint32_t u32SrcAddr = HRAM_TRIM_SAFE_OFFSET;
+    uint32_t u32DMMAddr = SPIM_HYPER_GET_DMMADDR(spim);
+
+    /* 8-byte-aligned buffers (DMA requirement) */
+    uint64_t au64Pattern[HRAM_TRIM_SIZE / 8] = {0};
+    uint64_t au64Verify [HRAM_TRIM_SIZE / 8] = {0};
+    uint8_t *pu8Pattern = (uint8_t *)au64Pattern;
+    uint8_t *pu8Verify  = (uint8_t *)au64Verify;
+
+    void (*generators[])(uint8_t *, uint32_t) =
+    {
+        GenPRBS7Pattern, GenWalking1sPattern, GenOriginalPattern
+    };
+    const uint32_t u32NumPat = sizeof(generators) / sizeof(generators[0]);
+
+    /* Phase 1: score each DLL delay across all patterns */
+    for (uint32_t pi = 0; pi < u32NumPat; pi++)
+    {
+        generators[pi](pu8Pattern, HRAM_TRIM_SIZE);
+        SPIM_HYPER_DMAWrite(spim, u32SrcAddr, pu8Pattern, HRAM_TRIM_SIZE);
+
+        for (uint32_t retry = 0; retry < DLL_TRIM_MAX_RETRY; retry++)
+        {
+            for (u8RdDelay = 0; u8RdDelay < SPIM_HYPER_MAX_LATENCY; u8RdDelay++)
+            {
+                SPIM_HYPER_SetDLLDelayNum(spim, u8RdDelay);
+                memset(pu8Verify, 0, HRAM_TRIM_SIZE);
+
+                for (uint32_t pass = 0; pass < DLL_TRIM_PASS_COUNT; pass++)
+                {
+                    uint32_t loopAddr = pass * 0x100;
+                    uint32_t ri = 0;
+
+                    for (; ri + 8 <= HRAM_TRIM_SIZE; )
+                    {
+                        if (loopAddr + 8 > HRAM_TRIM_SIZE) break;
+                        SPIM_HYPER_DMARead(spim, u32SrcAddr + loopAddr, &pu8Verify[ri], 8);
+                        if (memcmp(&pu8Pattern[loopAddr], &pu8Verify[ri], 8) == 0)
+                            u16Score[u8RdDelay] += DLL_TRIM_SCORE_PER_BLOCK;
+                        loopAddr += ((ri % 3) == 0) ? DLL_TRIM_JUMP_STEP_1 : DLL_TRIM_JUMP_STEP_2;
+                        ri += 8;
+                    }
+                }
+            }
+        }
+    }
+
+    /* Find best contiguous region */
+    uint16_t maxScore = 0;
+    for (uint32_t i = 0; i < SPIM_HYPER_MAX_LATENCY; i++)
+        if (u16Score[i] > maxScore) maxScore = u16Score[i];
+
+    uint8_t bestStart = 0, bestLen = 0, curLen = 0, curStart = 0;
+    for (uint32_t i = 0; i < SPIM_HYPER_MAX_LATENCY; i++)
+    {
+        if (u16Score[i] == maxScore)
+        {
+            if (curLen == 0) curStart = (uint8_t)i;
+            curLen++;
+        }
+        else
+        {
+            if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; }
+            curLen = 0;
+        }
+    }
+    if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; }
+
+    /* Phase 2: DMM verify the best-score range */
+    /* Use last pattern written for verification */
+    generators[u32NumPat - 1](pu8Pattern, HRAM_TRIM_SIZE);
+    SPIM_HYPER_DMAWrite(spim, u32SrcAddr, pu8Pattern, HRAM_TRIM_SIZE);
+
+    uint8_t verifiedList[SPIM_HYPER_MAX_LATENCY] = {0};
+    uint8_t verifiedCount = 0;
+
+    for (uint32_t i = bestStart; i < (uint32_t)(bestStart + bestLen); i++)
+    {
+        if (SPIM_HYPER_SetDLLDelayNum(spim, (uint8_t)i) != SPIM_HYPER_OK) continue;
+        if (SPIM_HYPER_GET_DLLREADY(spim) != SPIM_HYPER_OP_ENABLE) continue;
+
+        for (int r = 0; r < DMM_VERIFY_MAX_RETRY; r++)
+        {
+            if (VerifyFinalRead_RAM(spim, u32DMMAddr + u32SrcAddr,
+                                    pu8Pattern, HRAM_TRIM_SIZE))
+            {
+                verifiedList[verifiedCount++] = (uint8_t)i;
+                break;
+            }
+        }
+    }
+
+    if (verifiedCount > 0)
+    {
+        u8RdDelay = verifiedList[verifiedCount / 2];
+    }
+    else
+    {
+        u8RdDelay = bestStart + (bestLen / 2);
+    }
+
+    /* Fallback backup: try u8RdDelay, -1, -2 */
+    uint8_t backupTry[3] = { u8RdDelay,
+                              (uint8_t)(u8RdDelay - 1),
+                              (uint8_t)(u8RdDelay - 2) };
+
+    for (uint32_t i = 0; i < 3; i++)
+    {
+        if (SPIM_HYPER_SetDLLDelayNum(spim, backupTry[i]) != SPIM_HYPER_OK) continue;
+        if (SPIM_HYPER_GET_DLLREADY(spim) != SPIM_HYPER_OP_ENABLE) continue;
+
+        for (int r = 0; r < DMM_VERIFY_MAX_RETRY; r++)
+        {
+            if (VerifyFinalRead_RAM(spim, u32DMMAddr + u32SrcAddr,
+                                    pu8Pattern, HRAM_TRIM_SIZE))
+            {
+                printf("HyperRAM DLL Delay: %d\r\n", backupTry[i]);
+                SPIM_HYPER_SetDLLDelayNum(spim, backupTry[i]);
+                return;
+            }
+        }
+    }
+
+    printf("HyperRAM DLL Delay fallback: %d\r\n", DLL_TRIM_DEF_NUM);
+    SPIM_HYPER_SetDLLDelayNum(spim, DLL_TRIM_DEF_NUM);
+}
+
+/**
+ * @brief  Initialise SPIM for HyperRAM in Direct-Mapped Mode.
+ *         After this call the HyperRAM is accessible at 0x82000000.
+ */
+void SPIM_HyperRAM_Init(SPIM_T *pSPIMx)
+{
+    HRAM_REG_T sHRAMReg;
+
+    SPIM_NVIC_Disable(pSPIMx);
+    InitSPIMPort(pSPIMx);
+
+    /* Enable HyperRAM mode, clock divider = 1 */
+    SPIM_HYPER_Init(pSPIMx, SPIM_HYPERRAM_MODE, 1);
+
+    /* Configure timing: tCSM=4000ns, RD/WR latency=7 (device default) */
+    SPIM_HyperRAM_DefaultConfig(pSPIMx, HYPERRAM_CSM_TIME, HYPERRAM_RD_LTCY, HYPERRAM_WR_LTCY);
+
+    /* Reset HyperRAM device */
+    SPIM_HYPER_Reset(pSPIMx);
+
+    /* DLL trimming (uses DMA — must NOT be in DMM mode here) */
+    HyperRAM_TrimDLLDelayNumber(pSPIMx);
+
+    /* Read CONFIG0, set drive strength to 34 ohm (0), write back */
+    sHRAMReg.CONFIG0.u32REG = SPIM_HYPER_ReadHyperRAMReg(pSPIMx, SPIM_HYPER_HRAM_CONFIG_REG0);
+    sHRAMReg.CONFIG0.u3DriveStrength = 0;
+    SPIM_HYPER_WriteHyperRAMReg(pSPIMx, SPIM_HYPER_HRAM_CONFIG_REG0, sHRAMReg.CONFIG0.u32REG);
+
+    /* Enter Direct-Map Mode — HyperRAM now visible at 0x82000000 */
+    SPIM_HYPER_EnterDirectMapMode(pSPIMx);
+
+    printf("HyperRAM initialised at 0x%08X\r\n", (unsigned int)SPIM_HYPER_GET_DMMADDR(pSPIMx));
+}

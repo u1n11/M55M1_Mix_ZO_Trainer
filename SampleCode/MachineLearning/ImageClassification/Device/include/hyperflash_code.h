@@ -119,6 +119,7 @@ extern "C"
 /*----------------------------------------------------------------------------*/
 /* SPIM Init HyperBus Mode */
 void SPIM_HyperFlash_Init(SPIM_T *pSPIMx);
+void SPIM_HyperRAM_Init(SPIM_T *pSPIMx);
 void HyperFlash_EraseSector(SPIM_T *pSPIMx, uint32_t u32SectorCnt);
 void HyperFlash_ChipErase(SPIM_T *pSPIMx);
 

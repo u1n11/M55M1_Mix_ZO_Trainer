@@ -164,6 +164,13 @@ APP_IMAGE FLASH_START FLASH_SIZE
         .ANY (.bss.sram.data)
         .ANY1 (.bss.NoInit.activation_buf_sram)
     }
+
+    ; CPU model tensor arena — placed in external HyperRAM (SPIM0 DMM address space)
+    HYPERRAM_BUF SPIM0_START UNINIT SPIM0_SIZE
+    {
+        .ANY (.bss.NoInit.cpu_activation_buf)
+    }
+
     ; Check size overflow here and ImageLength is uncompressed size
     ScatterAssert((ImageLength(SRAM_NONCACHEABLE) + ImageLength(SRAM01_HYPERRAM)) < (SRAM01_ALIASE_SIZE + SPIM0_SIZE))
 

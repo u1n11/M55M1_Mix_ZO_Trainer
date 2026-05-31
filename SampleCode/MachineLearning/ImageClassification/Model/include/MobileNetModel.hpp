@@ -19,6 +19,8 @@
 
 #include "Model.hpp"
 
+#define USE_SPLIT_MODEL 1
+
 namespace arm
 {
 namespace app
@@ -45,11 +47,15 @@ protected:
     size_t ModelSize();
 
 private:
-    /* Maximum number of individual operations that can be enlisted. */
-    static constexpr int ms_maxOpCnt = 7;
+    /* Maximum number of individual operations that can be enlisted.
+     * 13 base ops + DEQUANTIZE + QUANTIZE + FullyConnected + EthosU = 17 max */
+    static constexpr int ms_maxOpCnt = 17;
 
     /* A mutable op resolver instance. */
     tflite::MicroMutableOpResolver<ms_maxOpCnt> m_opResolver;
+
+    /* Track whether operations have already been enlisted (to avoid duplicate registration). */
+    bool m_opsEnlisted = false;
 };
 
 } /* namespace app */

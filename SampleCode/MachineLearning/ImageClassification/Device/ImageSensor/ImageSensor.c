@@ -210,8 +210,14 @@ int ImageSensor_Init(void)
     s_psSensorInfo = &g_sSensorHM1055_QVGA_YUV422;
 
     /* Initialize sensor and set sensor output format as YUV422 */
-    if (s_psSensorInfo->pfnInitSensor(0) == FALSE) return -1;
+    if (s_psSensorInfo->pfnInitSensor(0) == FALSE)
+    {
+        printf("ERROR: Failed to detect/initialize camera sensor\n");
+        s_psSensorInfo = NULL;
+        return -1;
+    }
 
+    printf("Camera sensor initialized successfully\n");
     return 0;
 }
 
@@ -221,6 +227,12 @@ int ImageSensor_Config(E_IMAGE_FMT eImgFmt, uint32_t u32ImgWidth, uint32_t u32Im
     uint32_t u32CropWinHeight;
     uint32_t u32CropWinX = 0;
     uint32_t u32CropWinY = 0;
+
+    if (s_psSensorInfo == NULL)
+    {
+        printf("ERROR: Camera sensor not initialized\n");
+        return -1;
+    }
 
     if (bKeepRatio)
     {

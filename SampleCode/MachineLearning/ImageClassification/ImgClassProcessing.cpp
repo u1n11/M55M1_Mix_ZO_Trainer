@@ -61,9 +61,14 @@ ImgClassPostProcess::ImgClassPostProcess(Classifier &classifier, Model *model,
 
 bool ImgClassPostProcess::DoPostProcess()
 {
+    /* Float32 output = raw logits (no built-in Softmax) → apply Softmax here.
+     * Int8/UInt8 output = quantized probability (Softmax already in model) → skip. */
+    TfLiteTensor* output = this->m_model->GetOutputTensor(0);
+    bool needSoftmax = (output && output->type == kTfLiteFloat32);
+    uint32_t topNCount = (m_labels.size() < 5u) ? (uint32_t)m_labels.size() : 5u;
+
     return this->m_imgClassifier.GetClassificationResults(
-               this->m_model->GetOutputTensor(0), this->m_results,
-               this->m_labels, 5, false);
+               output, this->m_results, this->m_labels, topNCount, needSoftmax);
 }
 
 } /* namespace app */

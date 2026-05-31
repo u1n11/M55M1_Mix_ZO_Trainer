@@ -91,13 +91,11 @@ int BoardInit(void)
      * re-directed at this UART (UART6) */
     InitDebugUart();
 
-    SYS_LockReg();                   /* Unlock register lock protect */
+    /* Initialise HyperRAM on SPIM0 — accessible at 0x82000000 after init.
+     * Must be called before SYS_LockReg() as it enables SPIM0/OTFC0 clocks. */
+    SPIM_HyperRAM_Init(HYPERFLASH_SPIM_PORT);
 
-#if 0
-    SPIM_HyperFlash_Init(HYPERFLASH_SPIM_PORT);
-    /* Enter direct-mapped mode to run new applications */
-    SPIM_HYPER_EnterDirectMapMode(HYPERFLASH_SPIM_PORT);
-#endif
+    SYS_LockReg();                   /* Lock register protect */
 
     info("%s: complete\n", __FUNCTION__);
 

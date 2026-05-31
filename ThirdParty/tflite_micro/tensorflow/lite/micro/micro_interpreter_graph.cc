@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tensorflow/lite/micro/micro_interpreter_graph.h"
 
+#include <cstdio>
+
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers
 #include "tensorflow/lite/c/common.h"
 #include "tensorflow/lite/kernels/internal/compatibility.h"
@@ -108,9 +110,15 @@ TfLiteStatus MicroInterpreterGraph::PrepareSubgraphs() {
               .node_and_registrations[current_operator_index_]
               .registration;
       if (registration->prepare != nullptr) {
+        std::printf("INFO - [TFLM] Prepare OP[%u] %s\r\n",
+                    static_cast<unsigned>(current_operator_index_),
+                    OpNameFromRegistration(registration));
         TfLiteStatus prepare_status = registration->prepare(context_, node);
         if (prepare_status != kTfLiteOk) {
-          MicroPrintf("Node %s (number %df) failed to prepare with status %d",
+          std::printf("ERROR - [TFLM] Prepare failed at OP[%u] %s status=%d\r\n",
+                      static_cast<unsigned>(current_operator_index_),
+                      OpNameFromRegistration(registration), prepare_status);
+          MicroPrintf("Node %s (number %d) failed to prepare with status %d",
                       OpNameFromRegistration(registration),
                       current_operator_index_, prepare_status);
           return kTfLiteError;

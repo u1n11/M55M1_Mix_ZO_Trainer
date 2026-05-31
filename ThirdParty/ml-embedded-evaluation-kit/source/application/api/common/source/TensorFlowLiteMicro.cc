@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 #include "TensorFlowLiteMicro.hpp"
+#include <cstdio>
 
 void PrintTensorFlowVersion()
 {}
@@ -42,5 +43,6 @@ arm::app::QuantParams arm::app::GetTensorQuantParams(TfLiteTensor* tensor)
 
 extern "C" void DebugLog(const char* s)
 {
-    puts(s);
+    printf("%s", s);
+    fflush(stdout);
 }

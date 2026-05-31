@@ -67,16 +67,27 @@ namespace app {
          *  @param[in]  tensorArenaAddress  Size of the tensor arena buffer in bytes.
          *  @param[in]  nnModelAddr         Pointer to the model.
          *  @param[in]  nnModelSize         Size of the model in bytes, if known.
-         *  @param[in]  allocator   Optional: a pre-initialised micro allocator pointer,
-         *                          if available. If supplied, this allocator will be used
-         *                          to create the interpreter instance.
+         *  @param[in]  allocator           Optional: a pre-initialised micro allocator pointer,
+         *                                  if available. If supplied, this allocator will be used
+         *                                  to create the interpreter instance.
+         *  @param[in]  preserveAllTensors  If true, uses the arena-based MicroInterpreter constructor
+         *                                  with preserve_all_tensors=true, enabling GetTensor() access
+         *                                  to any internal tensor (e.g. FC weights for ZO training).
+         *                                  When true, the allocator parameter is ignored.
          *  @return     true if initialisation succeeds, false otherwise.
         **/
         bool Init(uint8_t* tensorArenaAddr,
                   uint32_t tensorArenaSize,
                   const uint8_t* nnModelAddr,
                   uint32_t nnModelSize,
-                  tflite::MicroAllocator* allocator = nullptr);
+                  tflite::MicroAllocator* allocator = nullptr,
+                  bool preserveAllTensors = false);
+
+        /** @brief  Gets the raw MicroInterpreter pointer (for advanced tensor access). */
+        tflite::MicroInterpreter* GetInterpreter() { return m_pInterpreter.get(); }
+
+        /** @brief  Gets the parsed FlatBuffer model pointer. */
+        const tflite::Model* GetModelFlatBuffer() const { return m_pModel; }
 
         /**
          * @brief       Gets the allocator pointer for this instance.
@@ -104,6 +115,9 @@ namespace app {
 
         /** @brief   Gets a pointer to the tensor arena. */
         uint8_t* GetTensorArena();
+
+        /** @brief   Gets the number of bytes actually used in the tensor arena after AllocateTensors(). */
+        size_t GetArenaUsedBytes() const;
 
     protected:
         /** @brief      Gets the pointer to the NN model data array.
@@ -139,6 +153,8 @@ namespace app {
         bool m_inited{false}; /* Indicates whether this object has been initialised. */
         const uint8_t* m_modelAddr{nullptr}; /* Model address */
         uint32_t m_modelSize{0};             /* Model size */
+        uint8_t* m_tensorArenaAddr{nullptr}; /* Tensor arena address (saved for preserve_all_tensors path) */
+        uint32_t m_tensorArenaSize{0};       /* Tensor arena size */
 
         std::vector<TfLiteTensor*> m_input{};  /* Model's input tensor pointers. */
         std::vector<TfLiteTensor*> m_output{}; /* Model's output tensor pointers. */

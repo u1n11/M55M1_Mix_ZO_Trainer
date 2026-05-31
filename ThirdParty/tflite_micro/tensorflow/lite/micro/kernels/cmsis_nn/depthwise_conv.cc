@@ -103,8 +103,11 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
         context, affine_quantization->scale->size == 1 ||
                      affine_quantization->scale->size ==
                          filter->dims->data[kDepthwiseConvQuantizedDimension]);
-    TF_LITE_ENSURE_EQ(context, affine_quantization->scale->size,
-                      affine_quantization->zero_point->size);
+    TF_LITE_ENSURE(
+      context,
+      affine_quantization->zero_point->size == 1 ||
+        affine_quantization->zero_point->size ==
+          affine_quantization->scale->size);
 
     // Allocate memory for per-channel quantization parameters
     const int num_channels =

@@ -17,6 +17,20 @@
 #include "Model.hpp"
 #include "log_macros.h"
 
+/* Compile-time switch for verbose TFLM model-load internals.
+ * 0: disabled (default), 1: enabled. */
+#ifndef IMGCLS_ENABLE_MODEL_LOAD_VERBOSE_LOGS
+#define IMGCLS_ENABLE_MODEL_LOAD_VERBOSE_LOGS 0
+#endif
+
+#if IMGCLS_ENABLE_MODEL_LOAD_VERBOSE_LOGS
+#define model_load_log(...) info(__VA_ARGS__)
+#define model_load_enabled() (true)
+#else
+#define model_load_log(...)
+#define model_load_enabled() (false)
+#endif
+
 #include <cinttypes>
 
 /* Initialise the model */
@@ -31,7 +45,8 @@ bool arm::app::Model::Init(uint8_t* tensorArenaAddr,
                            uint32_t tensorArenaSize,
                            const uint8_t* nnModelAddr,
                            uint32_t nnModelSize,
-                           tflite::MicroAllocator* allocator)
+                           tflite::MicroAllocator* allocator,
+                           bool preserveAllTensors)
 {
     /* Following tf lite micro example:
      * Map the model into a usable data structure. This doesn't involve any
@@ -51,6 +66,8 @@ bool arm::app::Model::Init(uint8_t* tensorArenaAddr,
 
     this->m_modelAddr = nnModelAddr;
     this->m_modelSize = nnModelSize;
+    this->m_tensorArenaAddr = tensorArenaAddr;
+    this->m_tensorArenaSize = tensorArenaSize;
 
     /* Pull in only the operation implementations we need.
      * This relies on a complete list of all the ops needed by this graph.
@@ -61,43 +78,119 @@ bool arm::app::Model::Init(uint8_t* tensorArenaAddr,
     /* NOLINTNEXTLINE(runtime-global-variables) */
     debug("loading op resolver\n");
 
-    this->EnlistOperations();
-
-    /* Create allocator instance, if it doesn't exist */
-    this->m_pAllocator = allocator;
-    if (!this->m_pAllocator) {
-        /* Create an allocator instance */
-        info("Creating allocator using tensor arena at 0x%p\n", tensorArenaAddr);
-
-        this->m_pAllocator = tflite::MicroAllocator::Create(
-                                        tensorArenaAddr,
-                                        tensorArenaSize);
-
-        if (!this->m_pAllocator) {
-            printf_err("Failed to create allocator\n");
-            return false;
-        }
-        debug("Created new allocator @ 0x%p\n", this->m_pAllocator);
-    } else {
-        debug("Using existing allocator @ 0x%p\n", this->m_pAllocator);
+    if (!this->EnlistOperations()) {
+        printf_err("Failed to enlist operations\n");
+        return false;
     }
 
-    this->m_pInterpreter = std::make_unique<tflite::MicroInterpreter>(
-        this->m_pModel, this->GetOpResolver(), this->m_pAllocator);
+    if (preserveAllTensors) {
+        /* Use the arena-based constructor with preserve_all_tensors=true.
+         * This enables GetTensor(idx) access to any internal tensor (e.g. FC weights).
+         * The allocator parameter is intentionally ignored in this path. */
+        model_load_log("Creating interpreter with preserve_all_tensors=true (arena @ 0x%p, %u bytes)\n",
+                   tensorArenaAddr, tensorArenaSize);
+        this->m_pInterpreter = std::make_unique<tflite::MicroInterpreter>(
+            this->m_pModel, this->GetOpResolver(),
+            tensorArenaAddr, tensorArenaSize,
+            nullptr, nullptr, true);
+    } else {
+        /* Create allocator instance, if it doesn't exist */
+        this->m_pAllocator = allocator;
+        if (!this->m_pAllocator) {
+            /* Create an allocator instance */
+            model_load_log("Creating allocator using tensor arena at 0x%p\n", tensorArenaAddr);
+
+            this->m_pAllocator = tflite::MicroAllocator::Create(
+                                            tensorArenaAddr,
+                                            tensorArenaSize);
+
+            if (!this->m_pAllocator) {
+                printf_err("Failed to create allocator\n");
+                return false;
+            }
+            debug("Created new allocator @ 0x%p\n", this->m_pAllocator);
+        } else {
+            debug("Using existing allocator @ 0x%p\n", this->m_pAllocator);
+        }
+
+        this->m_pInterpreter = std::make_unique<tflite::MicroInterpreter>(
+            this->m_pModel, this->GetOpResolver(), this->m_pAllocator);
+    }
 
     if (!this->m_pInterpreter) {
         printf_err("Failed to allocate interpreter\n");
         return false;
     }
 
+    /* Print model structure info before allocation */
+    {
+        const tflite::SubGraph* sg = this->m_pModel->subgraphs()->Get(0);
+        model_load_log("Model subgraph: %u tensors, %u operators\n",
+                   sg->tensors() ? (unsigned)sg->tensors()->size() : 0,
+                   sg->operators() ? (unsigned)sg->operators()->size() : 0);
+
+        /* Print input/output tensor shapes from FlatBuffer */
+        if (sg->inputs()) {
+            for (unsigned i = 0; i < sg->inputs()->size(); i++) {
+                int idx = sg->inputs()->Get(i);
+                const tflite::Tensor* t = sg->tensors()->Get(idx);
+                model_load_log("  Input[%u] T[%d] type=%s shape=[", i, idx,
+                               tflite::EnumNameTensorType(t->type()));
+                if (t->shape()) {
+                    for (unsigned s = 0; s < t->shape()->size(); s++) {
+                        if (s > 0) model_load_log(",");
+                        model_load_log("%d", t->shape()->Get(s));
+                    }
+                }
+                model_load_log("]\n");
+            }
+        }
+        if (sg->outputs()) {
+            for (unsigned i = 0; i < sg->outputs()->size(); i++) {
+                int idx = sg->outputs()->Get(i);
+                const tflite::Tensor* t = sg->tensors()->Get(idx);
+                model_load_log("  Output[%u] T[%d] type=%s shape=[", i, idx,
+                               tflite::EnumNameTensorType(t->type()));
+                if (t->shape()) {
+                    for (unsigned s = 0; s < t->shape()->size(); s++) {
+                        if (s > 0) model_load_log(",");
+                        model_load_log("%d", t->shape()->Get(s));
+                    }
+                }
+                model_load_log("]\n");
+            }
+        }
+    }
+
     /* Allocate memory from the tensor_arena for the model's tensors. */
-    info("Allocating tensors\n");
+    model_load_log("Allocating tensors\n");
     TfLiteStatus allocate_status = this->m_pInterpreter->AllocateTensors();
 
     if (allocate_status != kTfLiteOk) {
-        printf_err("tensor allocation failed!\n");
+        printf_err("tensor allocation failed! (arena provided: %" PRIu32 " bytes)\n",
+                   tensorArenaSize);
+
+        /* Try a minimal test: create a fresh allocator with the same arena
+         * to see if it's a memory issue or an op issue */
+        model_load_log("Attempting allocation with a 1KB arena to distinguish memory vs op failure...\n");
+        static uint8_t tinyArena[1024] __attribute__((aligned(16)));
+        auto* tinyAlloc = tflite::MicroAllocator::Create(tinyArena, sizeof(tinyArena));
+        if (tinyAlloc) {
+            auto tinyInterp = std::make_unique<tflite::MicroInterpreter>(
+                this->m_pModel, this->GetOpResolver(), tinyAlloc);
+            TfLiteStatus tinyStatus = tinyInterp->AllocateTensors();
+            if (tinyStatus != kTfLiteOk) {
+                printf_err("Also fails with 1KB arena => likely OP PREPARE failure, not memory\n");
+            } else {
+                printf_err("1KB succeeds but 8MB fails => unexpected\n");
+            }
+        }
+
         return false;
     }
+
+    model_load_log("Tensor arena used: %zu / %" PRIu32 " bytes\n",
+                   this->m_pInterpreter->arena_used_bytes(), tensorArenaSize);
 
     /* Get information about the memory area to use for the model's input. */
     this->m_input.resize(this->GetNumInputs());
@@ -122,7 +215,9 @@ bool arm::app::Model::Init(uint8_t* tensorArenaAddr,
             std::memset(this->m_output[outIndex]->data.data, 0, this->m_output[outIndex]->bytes);
         }
 
-        this->LogInterpreterInfo();
+        if (model_load_enabled()) {
+            this->LogInterpreterInfo();
+        }
     }
 
     this->m_inited = true;
@@ -146,22 +241,22 @@ void arm::app::Model::LogTensorInfo(TfLiteTensor* tensor)
     }
 
     debug("\ttensor is assigned to 0x%p\n", tensor);
-    info("\ttensor type is %s\n", TfLiteTypeGetName(tensor->type));
-    info("\ttensor occupies %zu bytes with dimensions\n",
-         tensor->bytes);
+    model_load_log("\ttensor type is %s\n", TfLiteTypeGetName(tensor->type));
+    model_load_log("\ttensor occupies %zu bytes with dimensions\n",
+                   tensor->bytes);
     for (int i = 0 ; i < tensor->dims->size; ++i) {
-        info ("\t\t%d: %3d\n", i, tensor->dims->data[i]);
+        model_load_log ("\t\t%d: %3d\n", i, tensor->dims->data[i]);
     }
 
     TfLiteQuantization quant = tensor->quantization;
     if (kTfLiteAffineQuantization == quant.type) {
         auto* quantParams = (TfLiteAffineQuantization*)quant.params;
-        info("Quant dimension: %" PRIi32 "\n", quantParams->quantized_dimension);
+        model_load_log("Quant dimension: %" PRIi32 "\n", quantParams->quantized_dimension);
         for (int i = 0; i < quantParams->scale->size; ++i) {
-            info("Scale[%d] = %f\n", i, quantParams->scale->data[i]);
+            model_load_log("Scale[%d] = %f\n", i, quantParams->scale->data[i]);
         }
         for (int i = 0; i < quantParams->zero_point->size; ++i) {
-            info("ZeroPoint[%d] = %d\n", i, quantParams->zero_point->data[i]);
+            model_load_log("ZeroPoint[%d] = %d\n", i, quantParams->zero_point->data[i]);
         }
     }
 }
@@ -173,22 +268,22 @@ void arm::app::Model::LogInterpreterInfo()
         return;
     }
 
-    info("Model INPUT tensors: \n");
+    model_load_log("Model INPUT tensors: \n");
     for (auto input : this->m_input) {
         this->LogTensorInfo(input);
     }
 
-    info("Model OUTPUT tensors: \n");
+    model_load_log("Model OUTPUT tensors: \n");
     for (auto output : this->m_output) {
         this->LogTensorInfo(output);
     }
 
-    info("Activation buffer (a.k.a tensor arena) size used: %zu\n",
-        this->m_pInterpreter->arena_used_bytes());
+    model_load_log("Activation buffer (a.k.a tensor arena) size used: %zu\n",
+                   this->m_pInterpreter->arena_used_bytes());
 
     /* We expect there to be only one subgraph. */
     const uint32_t nOperators = tflite::NumSubgraphOperators(this->m_pModel, 0);
-    info("Number of operators: %" PRIu32 "\n", nOperators);
+    model_load_log("Number of operators: %" PRIu32 "\n", nOperators);
 
     const tflite::SubGraph* subgraph = this->m_pModel->subgraphs()->Get(0);
 
@@ -211,7 +306,7 @@ void arm::app::Model::LogInterpreterInfo()
                             tflite::BuiltinOperator(reg->builtin_code)));
             }
         }
-        info("\tOperator %zu: %s\n", i, opName.c_str());
+        model_load_log("\tOperator %zu: %s\n", i, opName.c_str());
     }
 }
 
@@ -334,6 +429,14 @@ bool arm::app::Model::ShowModelInfoHandler()
     info("The model is optimised for Ethos-U NPU: %s.\n", this->ContainsEthosUOperator()? "yes": "no");
 
     return true;
+}
+
+size_t arm::app::Model::GetArenaUsedBytes() const
+{
+    if (this->m_pInterpreter) {
+        return this->m_pInterpreter->arena_used_bytes();
+    }
+    return 0;
 }
 
 const uint8_t* arm::app::Model::ModelPointer()
