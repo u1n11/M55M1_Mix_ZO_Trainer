@@ -82,10 +82,6 @@
 #define SRAM01_ALIASE_START    0x81F00000
 #define SRAM01_ALIASE_SIZE     0x00100000
 
-#define SPIM0_START      0x82000000
-#define SPIM0_SIZE       0x02000000
-
-
 //#define STACK_HEAP       0x20180000
 
 
@@ -163,16 +159,11 @@ APP_IMAGE FLASH_START FLASH_SIZE
     {
         .ANY (.bss.sram.data)
         .ANY1 (.bss.NoInit.activation_buf_sram)
-    }
-
-    ; CPU model tensor arena — placed in external HyperRAM (SPIM0 DMM address space)
-    HYPERRAM_BUF SPIM0_START UNINIT SPIM0_SIZE
-    {
-        .ANY (.bss.NoInit.cpu_activation_buf)
+        .ANY2 (.bss.NoInit.cpu_activation_buf)
     }
 
     ; Check size overflow here and ImageLength is uncompressed size
-    ScatterAssert((ImageLength(SRAM_NONCACHEABLE) + ImageLength(SRAM01_HYPERRAM)) < (SRAM01_ALIASE_SIZE + SPIM0_SIZE))
+    ScatterAssert((ImageLength(SRAM_NONCACHEABLE) + ImageLength(SRAM01_HYPERRAM)) < SRAM01_ALIASE_SIZE)
 
     ARM_LIB_STACK __STACK_TOP EMPTY - STACK_SIZE {}     ; Reserve empty region for stack
 

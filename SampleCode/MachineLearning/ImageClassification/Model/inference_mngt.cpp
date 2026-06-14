@@ -22,6 +22,10 @@
 #include "BufAttributes.hpp"
 #include "Labels.hpp"
 
+#ifndef CPU_ACTIVATION_BUF_SZ
+    #define CPU_ACTIVATION_BUF_SZ  0x00020000  /* 128 KB */
+#endif
+
 #if defined (__USE_DISPLAY__)
     #include "Display.h"
 #endif
@@ -132,48 +136,13 @@ static void DoLoadModel(void)
     extern uint32_t SystemCoreClock;
     const uint64_t t0 = pmu_get_systick_Count();
 
-    /* Detect whether the model is for NPU (has EthosU custom ops) or CPU-only.
-     * NPU model uses internal SRAM arena; CPU model uses external HyperRAM arena. */
     const uint8_t *modelPtr = arm::app::mobilenet::GetModelPointer();
     size_t         modelLen = arm::app::mobilenet::GetModelLen();
     const tflite::Model *fbModel = ::tflite::GetModel(modelPtr);
 
-    bool isNpuModel = false;
-    if (fbModel && fbModel->subgraphs() && fbModel->subgraphs()->size() > 0)
-    {
-        const auto *subgraph = fbModel->subgraphs()->Get(0);
-        const auto *opcodes  = fbModel->operator_codes();
-        if (subgraph && subgraph->operators() && opcodes)
-        {
-            for (uint32_t i = 0; i < subgraph->operators()->size(); i++)
-            {
-                const auto *op     = subgraph->operators()->Get(i);
-                const auto *opcode = opcodes->Get(op->opcode_index());
-                if (opcode && tflite::GetBuiltinCode(opcode) == tflite::BuiltinOperator_CUSTOM
-                    && opcode->custom_code()
-                    && std::strstr(opcode->custom_code()->c_str(), "ethos") != nullptr)
-                {
-                    isNpuModel = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    uint8_t *arenaPtr;
-    uint32_t arenaSize;
-    if (isNpuModel)
-    {
-        arenaPtr  = arm::app::tensorArena;
-        arenaSize = sizeof(arm::app::tensorArena);
-        info_if_token(LOG_MODEL_LOAD, "[ISM] Using SRAM tensor arena (%u bytes)\r\n", arenaSize);
-    }
-    else
-    {
-        arenaPtr  = arm::app::cpuTensorArena;
-        arenaSize = CPU_ACTIVATION_BUF_SZ;
-        info_if_token(LOG_MODEL_LOAD, "[ISM] Using HyperRAM tensor arena (%u bytes) at 0x%p\r\n", arenaSize, arenaPtr);
-    }
+    uint8_t *arenaPtr  = arm::app::tensorArena;
+    uint32_t arenaSize = sizeof(arm::app::tensorArena);
+    info_if_token(LOG_MODEL_LOAD, "[ISM] Using SRAM tensor arena (%u bytes)\r\n", arenaSize);
 
     /* Dump all operator types required by this model for diagnostics */
     if (fbModel && fbModel->operator_codes())
@@ -277,29 +246,6 @@ static void DoLoadModel(void)
         }
     }
 
-    /* Quick HyperRAM sanity test: write/read at start, middle, and end of arena */
-    if (!isNpuModel)
-    {
-        volatile uint32_t *p;
-        const uint32_t testPattern = 0xDEADBEEF;
-        const uint32_t offsets[] = { 0, arenaSize / 2, arenaSize - 4 };
-
-        info_if_token(LOG_HYPERRAM_TEST, "[ISM] HyperRAM sanity test...\r\n");
-        for (int t = 0; t < 3; t++)
-        {
-            p = (volatile uint32_t *)(arenaPtr + offsets[t]);
-            *p = testPattern;
-            uint32_t readback = *p;
-            if (readback != testPattern)
-            {
-                printf_err("[ISM] HyperRAM FAIL at 0x%p: wrote 0x%08X read 0x%08X\r\n",
-                           p, testPattern, readback);
-                return;
-            }
-        }
-        info_if_token(LOG_HYPERRAM_TEST, "[ISM] HyperRAM OK (tested 3 locations)\r\n");
-    }
-
     if (!model.Init(arenaPtr, arenaSize, modelPtr, modelLen))
     {
         printf_err("[ISM] Failed to initialise model\r\n");
@@ -311,7 +257,7 @@ static void DoLoadModel(void)
     const std::vector<ARM_MPU_Region_t> mpuConfig =
     {
         {
-            // Tensor arena (SRAM or HyperRAM)
+            // Tensor arena (SRAM)
             ARM_MPU_RBAR(((unsigned int)arenaPtr),             // Base
                          ARM_MPU_SH_NON,    // Non-shareable
                          0,                 // Read-only
@@ -761,37 +707,14 @@ static void DoLoadSplitModel(void)
         return;
     }
 
-    /* ---- Classifier (CPU → HyperRAM arena) ---- */
+    /* ---- Classifier (CPU → SRAM arena) ---- */
     const uint8_t *clsPtr  = arm::app::classifier_cpu_int8::GetModelPointer();
     size_t         clsLen  = arm::app::classifier_cpu_int8::GetModelLen();
     uint8_t       *clsArena     = arm::app::cpuTensorArena;
     uint32_t       clsArenaSize = CPU_ACTIVATION_BUF_SZ;
 
-    info_if_token(LOG_MODEL_LOAD, "[ISM] Classifier: %zu bytes, HyperRAM arena %u bytes at 0x%p\r\n",
+    info_if_token(LOG_MODEL_LOAD, "[ISM] Classifier: %zu bytes, SRAM arena %u bytes at 0x%p\r\n",
          clsLen, clsArenaSize, clsArena);
-
-    /* Quick HyperRAM sanity test */
-    {
-        volatile uint32_t *p;
-        const uint32_t testPattern = 0xDEADBEEF;
-        const uint32_t offsets[] = { 0, clsArenaSize / 2, clsArenaSize - 4 };
-
-        info_if_token(LOG_HYPERRAM_TEST, "[ISM] HyperRAM sanity test...\r\n");
-        for (int t = 0; t < 3; t++)
-        {
-            p = (volatile uint32_t *)(clsArena + offsets[t]);
-            *p = testPattern;
-            uint32_t readback = *p;
-            if (readback != testPattern)
-            {
-                printf_err("[ISM] HyperRAM FAIL at 0x%p: wrote 0x%08X read 0x%08X\r\n",
-                           p, testPattern, readback);
-                g_modelLoadFailed = true;
-                return;
-            }
-        }
-        info_if_token(LOG_HYPERRAM_TEST, "[ISM] HyperRAM OK\r\n");
-    }
 
     if (!classifierModel.Init(clsArena, clsArenaSize, clsPtr, clsLen))
     {
@@ -815,7 +738,7 @@ static void DoLoadSplitModel(void)
         return;
     }
 
-    /* ---- MPU: mark both arenas as write-through cacheable ---- */
+    /* ---- MPU: mark tensor arenas as write-through cacheable ---- */
     const std::vector<ARM_MPU_Region_t> mpuConfig =
     {
         {
@@ -823,13 +746,6 @@ static void DoLoadSplitModel(void)
             ARM_MPU_RBAR(((unsigned int)extArena),
                          ARM_MPU_SH_NON, 0, 1, 1),
             ARM_MPU_RLAR((((unsigned int)extArena) + extArenaSize - 1),
-                         eMPU_ATTR_CACHEABLE_WTRA)
-        },
-        {
-            /* HyperRAM tensor arena (classifier / CPU) */
-            ARM_MPU_RBAR(((unsigned int)clsArena),
-                         ARM_MPU_SH_NON, 0, 1, 1),
-            ARM_MPU_RLAR((((unsigned int)clsArena) + clsArenaSize - 1),
                          eMPU_ATTR_CACHEABLE_WTRA)
         },
 #if defined (__USE_CCAP__)

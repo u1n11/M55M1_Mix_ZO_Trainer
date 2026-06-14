@@ -58,7 +58,6 @@ MEMORY
   FLASH  (rx)  : ORIGIN = 0x00100000, LENGTH = 0x00200000
   SRAM012 (rw) : ORIGIN = 0x20100000, LENGTH = 0x00150000
   DTCM   (rw) : ORIGIN = 0x20000000, LENGTH = 0x00020000
-  HYPERFLASH (rwx) : ORIGIN = 0x82000000, LENGTH = 0x02000000
 }
 
 
@@ -220,6 +219,7 @@ SECTIONS
     *(.bss.sram.data)
     *(.bss.vram.data)
     *(.bss.NoInit.activation_buf_sram)
+    *(.bss.NoInit.cpu_activation_buf)
   } > SRAM012 AT > SRAM012
 
   .bss :
@@ -257,12 +257,4 @@ SECTIONS
   /* Check if data + heap + stack exceeds DTCM limit */
   ASSERT(__StackLimit >= __HeapLimit, "region DTCM overflowed with stack")
 
-/*
-  .hyperflash :
-  {
-    . = ALIGN(16);
-    *(ifm)
-    *(nn_model)
-  } > HYPERFLASH AT > HYPERFLASH
-*/
 }
