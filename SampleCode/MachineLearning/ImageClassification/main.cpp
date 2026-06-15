@@ -162,6 +162,7 @@ ZOTrainer* zoTrainer          = nullptr;
 int        zoTargetLabel      = -1;
 float      zoLearningRate     = 0.01f; /* default; host may override via UART */
 int        zoNumPerturbations = 50;    /* default Q; host may override via UART */
+int        zoMethod           = ZO_METHOD_NP; /* default NP; host may set WP before first step */
 #endif
 
 /* ------------------------------------------------------------------ */

@@ -105,6 +105,29 @@ public:
     float TrainStep(arm::app::Model& classifierModel, int targetLabel,
                     float learningRate, int numPerturbations);
 
+    /**
+     * @brief  Execute one ZO-SGD training step using WEIGHT perturbation (WP).
+     *
+     * Classic ZO-SGD: perturbs every FC parameter (C×F INT8 weights + C INT32
+     * bias) by ±1 LSB with a Rademacher sign, evaluates the perturbed loss, and
+     * accumulates the SPSA gradient estimate over Q passes — discarding the
+     * analytic ∇W = ∇z·aᵀ structure that NP exploits. Provided for a quantitative
+     * NP-vs-WP comparison only; for this single-FC head NP has ~1000× lower
+     * gradient variance (perturbation dim C vs C×F).
+     *
+     * Shares all buffers, quantization handling, and StepMetrics reporting with
+     * TrainStep(); the weight gradient is accumulated in m_weightGradBuf and the
+     * bias gradient in m_nodeGradBuf. Same signature/semantics as TrainStep so
+     * the two are drop-in interchangeable at the call site.
+     *
+     * @note  Because WP applies the GNS factor with the full perturbation
+     *        dimension d = C·F + C (≫ C), the same learningRate behaves very
+     *        differently than under NP — WP typically needs a larger LR and/or
+     *        larger Q to move the INT8 weights off their quantization grid.
+     */
+    float TrainStepWP(arm::app::Model& classifierModel, int targetLabel,
+                      float learningRate, int numPerturbations);
+
     bool               IsInitialized()  const { return m_inited; }
     int                GetStepCount()   const { return m_stepCount; }
     float              GetLastLoss()    const { return m_lastLoss; }

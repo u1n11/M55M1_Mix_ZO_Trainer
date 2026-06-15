@@ -28,7 +28,7 @@ The set of available commands depends on the compile-time flag `USE_SPLIT_MODEL`
 | Flag | Mode | Active Commands |
 |------|------|-----------------|
 | `USE_SPLIT_MODEL=0` | Standard single-model | `load_model`, `this_is?`, `show_graph` |
-| `USE_SPLIT_MODEL=1` | Split extractor + classifier with ZO training | `load_model`, `this_is?`, `zo_init`, `zo_reset`, `zo_status`, `zo_save`, `tra=<label>`, `zo_set_lr <val>`, `zo_set_q <val>` |
+| `USE_SPLIT_MODEL=1` | Split extractor + classifier with ZO training | `load_model`, `this_is?`, `zo_init`, `zo_reset`, `zo_status`, `zo_save`, `tra=<label>`, `zo_set_lr <val>`, `zo_set_q <val>`, `zo_set_method <np\|wp>` |
 
 Log control commands (`log_all`, `log_none`, `log_status`, `log_on <token>`, `log_off <token>`) are available in **both** modes.
 
@@ -228,8 +228,11 @@ tra=cat
 
 **Expected MCU output**:
 ```
-[FRAME: 2] [ZO] Step 1 | target=cat | loss=2.3021->1.8754 | loss_ema=2.3021 | delta_params=3.27% | grad_norm=12.8431 | lr=0.010000 | Q=50 | Time: 142.50ms | Mem: 93184 bytes
+[FRAME: 2] [ZO] Step 1 | method=NP | target=cat | loss=2.3021->1.8754 | loss_ema=2.3021 | delta_params=3.27% | grad_norm=12.8431 | lr=0.010000 | Q=50 | Time: 142.50ms | Mem: 93184 bytes
 ```
+
+- `method=NP|WP` — the gradient-estimation method used this step (set via
+  `zo_set_method`; NP by default).
 
 The device reports **raw per-step measurements only**. It performs no
 convergence judgement and never changes training behaviour based on these
@@ -303,6 +306,58 @@ zo_set_q 50
 ```
 
 **Default**: Value of `zoNumPerturbations` as initialised in `main.cpp`.
+
+---
+
+### `zo_set_method <np|wp>`
+
+**Purpose**: Select the zeroth-order gradient-estimation method for `tra=` steps.
+
+| Value | Method | Perturbs | Perturbation dim |
+|-------|--------|----------|------------------|
+| `np` | **Node Perturbation** (default) | the C logits, reconstructs ∇W = ∇z·aᵀ analytically | C = 10 |
+| `wp` | **Weight Perturbation** | every FC weight + bias by ±1 LSB (classic SPSA) | C·F + C ≈ 12 810 |
+
+**Execution**: Synchronous.
+
+**Locking**: A comparison run must stay on a single method, so switching is
+**only allowed before the first training step**. Once `GetStepCount() > 0`, the
+command is rejected until you `zo_reset` (which clears the step count and
+releases the lock). With no command issued, the method defaults to **NP**.
+
+**Example**:
+```
+zo_set_method wp
+```
+
+**Expected MCU output**:
+```
+[ZO] Method set to WP
+```
+
+**Output when already on that method**:
+```
+[ZO] Method already WP; unchanged
+```
+
+**Error output** (switch attempted mid-run):
+```
+[ZO] Cannot switch method after 12 step(s). Send 'zo_reset' first.
+```
+
+**Error output** (bad value):
+```
+[ZO] Unknown method 'foo'. Valid: np, wp
+```
+
+> **Note on hyper-parameters**: WP applies the GNS factor with the full
+> perturbation dimension `d = C·F + C` (≫ C), so the *same* `zo_set_lr` value
+> moves the INT8 weights far less under WP than under NP. Expect WP to need a
+> larger LR and/or larger Q to register non-zero `delta_params`. This is the
+> dimensionality/variance penalty WP pays — and the headline result of the
+> NP-vs-WP comparison.
+
+**Default**: `ZO_METHOD_NP`, as initialised in `main.cpp`.
 
 ---
 
@@ -429,6 +484,8 @@ log_off load
 | `[ZO] Unknown label '<x>'` | Label string does not match any entry in `labels[]` |
 | `[ZO] Invalid learning rate (must be > 0)` | `zo_set_lr` value is zero or negative |
 | `[ZO] Invalid Q value (must be > 0)` | `zo_set_q` value is zero or negative |
+| `[ZO] Unknown method '<x>'` | `zo_set_method` value is not `np` or `wp` |
+| `[ZO] Cannot switch method after <n> step(s). Send 'zo_reset' first.` | `zo_set_method` issued mid-run (step count > 0); locked for comparison integrity |
 | `[ZO] Manual save to flash failed` | Flash write error during `zo_save` |
 | `[ZO] Reset done in RAM, but clearing flash snapshot failed` | `zo_reset` succeeded in RAM but flash erase failed |
 
@@ -452,6 +509,7 @@ this_is?
 ```
 load_model          ← load extractor + classifier
 zo_init             ← copy weights to mutable RAM; restore flash snapshot if present
+zo_set_method np    ← (optional) pick NP or WP; MUST be set before the first tra=
 zo_set_lr 0.01      ← (optional) tune learning rate
 zo_set_q 20         ← (optional) tune perturbation count
 this_is?            ← baseline accuracy before training

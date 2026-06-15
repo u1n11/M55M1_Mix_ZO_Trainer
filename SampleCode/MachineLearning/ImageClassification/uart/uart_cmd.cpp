@@ -188,6 +188,43 @@ void UART_ProcessCommand(char *cmdBuf)
         }
         return;
     }
+
+    /* ---- "zo_set_method np|wp" ----
+     * Locked once a training run has started: a comparison run must stay on one
+     * method. Switch is only accepted before the first step (or after zo_reset).
+     * No command at all → default NP (zoMethod initialised to ZO_METHOD_NP). */
+    if (std::strncmp(cmdBuf, "zo_set_method ", 14) == 0)
+    {
+        const char *methodStr = cmdBuf + 14;
+        while (*methodStr == ' ') methodStr++; /* skip spaces */
+
+        int requested;
+        if (std::strcmp(methodStr, "np") == 0) {
+            requested = ZO_METHOD_NP;
+        } else if (std::strcmp(methodStr, "wp") == 0) {
+            requested = ZO_METHOD_WP;
+        } else {
+            info("[ZO] Unknown method '%s'. Valid: np, wp\r\n", methodStr);
+            return;
+        }
+
+        if (requested == zoMethod) {
+            info("[ZO] Method already %s; unchanged\r\n",
+                 (zoMethod == ZO_METHOD_WP) ? "WP" : "NP");
+            return;
+        }
+
+        /* Lock: refuse to switch mid-run so a comparison stays single-method. */
+        if (zoTrainer && zoTrainer->IsInitialized() && zoTrainer->GetStepCount() > 0) {
+            info("[ZO] Cannot switch method after %d step(s). Send 'zo_reset' first.\r\n",
+                 zoTrainer->GetStepCount());
+            return;
+        }
+
+        zoMethod = requested;
+        info("[ZO] Method set to %s\r\n", (zoMethod == ZO_METHOD_WP) ? "WP" : "NP");
+        return;
+    }
 #endif /* USE_SPLIT_MODEL */
 
     /* ---- Log Control Commands ---- */

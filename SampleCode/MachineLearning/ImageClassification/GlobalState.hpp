@@ -71,6 +71,13 @@ extern ZOTrainer* zoTrainer;
 extern int        zoTargetLabel;
 extern float      zoLearningRate;
 extern int        zoNumPerturbations;
+
+/* ZO gradient-estimation method: 0 = Node Perturbation (NP, default),
+ * 1 = Weight Perturbation (WP). Set once via `zo_set_method` BEFORE the first
+ * training step; locked thereafter until `zo_reset` to keep a comparison run on
+ * a single method. */
+enum ZOMethod { ZO_METHOD_NP = 0, ZO_METHOD_WP = 1 };
+extern int        zoMethod;
 #endif
 
 /* ------------------------------------------------------------------ */

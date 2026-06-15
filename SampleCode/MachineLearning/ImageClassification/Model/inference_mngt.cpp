@@ -1058,8 +1058,11 @@ static void DoZOTrain(void)
     extern uint32_t SystemCoreClock;
     uint64_t t0 = pmu_get_systick_Count();
 
-    float loss = zoTrainer->TrainStep(classifierModel, zoTargetLabel,
-                                      zoLearningRate, zoNumPerturbations);
+    float loss = (zoMethod == ZO_METHOD_WP)
+                 ? zoTrainer->TrainStepWP(classifierModel, zoTargetLabel,
+                                          zoLearningRate, zoNumPerturbations)
+                 : zoTrainer->TrainStep(classifierModel, zoTargetLabel,
+                                        zoLearningRate, zoNumPerturbations);
 
     uint64_t elapsed_cyc = pmu_get_systick_Count() - t0;
     uint32_t elapsed_us  = (uint32_t)(elapsed_cyc * 1000000ULL / SystemCoreClock);
@@ -1069,10 +1072,12 @@ static void DoZOTrain(void)
     const ZOTrainer::StepMetrics& m = zoTrainer->GetLastMetrics();
     (void)loss; /* full A→B series is in the metrics struct */
     const std::string& labelName = labels[(size_t)zoTargetLabel];
-    info_critical("[FRAME: %u] [ZO] Step %d | target=%s(%d) | loss=%.4f->%.4f | loss_ema=%.4f | "
+    const char* methodName = (zoMethod == ZO_METHOD_WP) ? "WP" : "NP";
+    info_critical("[FRAME: %u] [ZO] Step %d | method=%s | target=%s(%d) | loss=%.4f->%.4f | loss_ema=%.4f | "
                   "delta_params=%.2f%% | grad_norm=%.4f | lr=%.6f | Q=%d | Time: %.2fms | Mem: %zu bytes\r\n",
          inferenceFrameCount,
          zoTrainer->GetStepCount(),
+         methodName,
          labelName.c_str(), zoTargetLabel,
          m.loss_before, m.loss_after,
          m.loss_ema,
