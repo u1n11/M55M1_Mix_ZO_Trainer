@@ -39,6 +39,24 @@ public:
         int     output_zero_point;
     };
 
+    /**
+     * @brief  Per-step measurement data reported to the external host.
+     *
+     * The device only *measures* and reports these values. It performs NO
+     * convergence judgement and changes NO training behaviour based on them —
+     * the host decides convergence/stopping from the reported log series.
+     */
+    struct StepMetrics {
+        float loss_before;   /**< Cross-entropy loss before the update (A)        */
+        float loss_after;    /**< Cross-entropy loss after the update  (B)        */
+        float loss_ema;      /**< EMA of loss_before, smoothing α=0.1             */
+        float delta_params;  /**< Fraction [0,1] of INT8 weights that changed     */
+        float grad_norm;     /**< L2 norm of the ZO node-gradient estimate        */
+    };
+
+    /** @brief  EMA smoothing factor for loss reporting (host-agnostic). */
+    static constexpr float kLossEmaAlpha = 0.1f;
+
     ZOTrainer();
 
     /**
@@ -79,13 +97,18 @@ public:
      * @param learningRate      Learning rate (e.g. 0.01).
      * @param numPerturbations  Number of node perturbations Q per step (e.g. 50).
      * @return Cross-entropy loss before the weight update.
+     *
+     * @note  Per-step measurement data (loss A→B, loss EMA, delta_params,
+     *        grad_norm) is recorded in the StepMetrics accessible via
+     *        GetLastMetrics(). No convergence judgement is made on-device.
      */
     float TrainStep(arm::app::Model& classifierModel, int targetLabel,
                     float learningRate, int numPerturbations);
 
-    bool           IsInitialized()  const { return m_inited; }
-    int            GetStepCount()   const { return m_stepCount; }
-    float          GetLastLoss()    const { return m_lastLoss; }
+    bool               IsInitialized()  const { return m_inited; }
+    int                GetStepCount()   const { return m_stepCount; }
+    float              GetLastLoss()    const { return m_lastLoss; }
+    const StepMetrics& GetLastMetrics() const { return m_metrics; }
     const FCInfo&  GetFCInfo()      const { return m_fcInfo; }
     size_t         GetMemoryUsed()  const { return m_memUsed; }
     const int8_t*  GetMutableWeights() const { return m_mutableWeights; }
@@ -123,11 +146,14 @@ private:
     float*   m_nodeGradBuf;      /**< Node gradient ∇̂z accumulator (C floats)   */
     float*   m_weightGradBuf;    /**< Weight gradient ∇̂W accumulator (C×F float)*/
 
-    FCInfo  m_fcInfo;
-    int     m_stepCount;
-    float   m_lastLoss;
-    bool    m_inited;
-    size_t  m_memUsed;
+    FCInfo      m_fcInfo;
+    int         m_stepCount;
+    float       m_lastLoss;
+    StepMetrics m_metrics;     /**< Last step's reported measurement data       */
+    float       m_lossEma;     /**< Running EMA of loss_before                  */
+    bool        m_emaInited;   /**< False until the first step seeds the EMA    */
+    bool        m_inited;
+    size_t      m_memUsed;
 };
 
 #endif /* ZO_TRAINER_HPP */

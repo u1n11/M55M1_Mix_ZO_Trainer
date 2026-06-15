@@ -160,8 +160,8 @@ std::string lastInferenceResult = "";
 #if defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1)
 ZOTrainer* zoTrainer          = nullptr;
 int        zoTargetLabel      = -1;
-float      zoLearningRate     = 0.01f;
-int        zoNumPerturbations = 20;
+float      zoLearningRate     = 0.01f; /* default; host may override via UART */
+int        zoNumPerturbations = 50;    /* default Q; host may override via UART */
 #endif
 
 /* ------------------------------------------------------------------ */

@@ -26,6 +26,9 @@ ZOTrainer::ZOTrainer()
       m_fcInfo{},
       m_stepCount(0),
       m_lastLoss(0.0f),
+      m_metrics{},
+      m_lossEma(0.0f),
+      m_emaInited(false),
       m_inited(false),
       m_memUsed(0)
 {
@@ -397,6 +400,13 @@ float ZOTrainer::TrainStep(arm::app::Model& /* classifierModel */, int targetLab
         }
     }
 
+    /* ZO gradient-estimate norm (measurement only): ‖∇̂z‖₂ over the C nodes. */
+    float gradNorm = 0.0f;
+    for (int c = 0; c < C; c++) {
+        gradNorm += m_nodeGradBuf[c] * m_nodeGradBuf[c];
+    }
+    gradNorm = sqrtf(gradNorm);
+
     /* ---- GNS factor: NQ / (NQ + C − 1),  N=1, µ=1 (Eq. 11) ---- */
     float normScale = (float)Q / ((float)Q + (float)C - 1.0f);
 
@@ -430,6 +440,39 @@ float ZOTrainer::TrainStep(arm::app::Model& /* classifierModel */, int targetLab
         }
     }
 
+    /* ---- Post-update measurements (device reports raw data only) ---- */
+
+    /* delta_params: fraction of INT8 weight elements that actually changed.
+     * INT8 updates round to integers, so many sub-LSB steps leave the stored
+     * weight unchanged; this is the raw quantization-saturation measurement.
+     * Weights are untouched during the NP loop, so m_stepSnapshot still holds
+     * the pre-update integer weights. */
+    int changed = 0;
+    for (int i = 0; i < m_fcInfo.weight_bytes; i++) {
+        if (m_mutableWeights[i] != m_stepSnapshot[i]) changed++;
+    }
+    float deltaParams = (m_fcInfo.weight_bytes > 0)
+                        ? (float)changed / (float)m_fcInfo.weight_bytes
+                        : 0.0f;
+
+    /* loss_after (B): cross-entropy at the updated weights, same cached feature. */
+    float lossAfter = ComputeLossFromCachedFeature(nullptr, targetLabel);
+
+    /* loss_ema: EMA of the pre-update loss series, α=0.1. Seeded on first step.
+     * Reported only — no on-device judgement is derived from it. */
+    if (!m_emaInited) {
+        m_lossEma   = lossClean;
+        m_emaInited = true;
+    } else {
+        m_lossEma = kLossEmaAlpha * lossClean + (1.0f - kLossEmaAlpha) * m_lossEma;
+    }
+
+    m_metrics.loss_before  = lossClean;
+    m_metrics.loss_after   = lossAfter;
+    m_metrics.loss_ema     = m_lossEma;
+    m_metrics.delta_params = deltaParams;
+    m_metrics.grad_norm    = gradNorm;
+
     m_stepCount++;
     m_lastLoss = lossClean;
     return lossClean;
@@ -449,6 +492,9 @@ void ZOTrainer::Reset(arm::app::Model& /* classifierModel */)
 
     m_stepCount = 0;
     m_lastLoss  = 0.0f;
+    m_metrics   = StepMetrics{};
+    m_lossEma   = 0.0f;
+    m_emaInited = false;
     info("[ZO] Weights reset to original values\r\n");
 }
 
@@ -485,5 +531,11 @@ bool ZOTrainer::LoadFromSnapshot(const int8_t* weights,
     }
 
     m_stepCount = (stepCount < 0) ? 0 : stepCount;
+
+    /* Loss EMA cannot be reconstructed from a weights-only snapshot; re-seed
+     * it on the next step so the reported series restarts cleanly. */
+    m_metrics   = StepMetrics{};
+    m_lossEma   = 0.0f;
+    m_emaInited = false;
     return true;
 }

@@ -1064,12 +1064,21 @@ static void DoZOTrain(void)
     uint64_t elapsed_cyc = pmu_get_systick_Count() - t0;
     uint32_t elapsed_us  = (uint32_t)(elapsed_cyc * 1000000ULL / SystemCoreClock);
 
+    /* Device reports raw per-step measurements only; the external host decides
+     * convergence/stopping from this log series. No on-device judgement here. */
+    const ZOTrainer::StepMetrics& m = zoTrainer->GetLastMetrics();
+    (void)loss; /* full A→B series is in the metrics struct */
     const std::string& labelName = labels[(size_t)zoTargetLabel];
-    info_critical("[FRAME: %u] [ZO] Step %d | Label: %s(%d) | Loss: %.4f | Time: %.2fms | Mem: %zu bytes\r\n",
+    info_critical("[FRAME: %u] [ZO] Step %d | target=%s(%d) | loss=%.4f->%.4f | loss_ema=%.4f | "
+                  "delta_params=%.2f%% | grad_norm=%.4f | lr=%.6f | Q=%d | Time: %.2fms | Mem: %zu bytes\r\n",
          inferenceFrameCount,
          zoTrainer->GetStepCount(),
          labelName.c_str(), zoTargetLabel,
-         loss,
+         m.loss_before, m.loss_after,
+         m.loss_ema,
+         m.delta_params * 100.0f,
+         m.grad_norm,
+         zoLearningRate, zoNumPerturbations,
          elapsed_us / 1000.0f,
          zoTrainer->GetMemoryUsed());
 
