@@ -19,7 +19,7 @@
 
 #include "Model.hpp"
 
-#define USE_SPLIT_MODEL 1
+#define USE_SPLIT_MODEL 0
 
 namespace arm
 {

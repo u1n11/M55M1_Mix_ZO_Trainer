@@ -550,19 +550,19 @@
               <FilePath>..\Model\ZOTrainer.cpp</FilePath>
             </File>
             <File>
-              <FileName>student035_kd_v2_cls_int8.tflite.cc</FileName>
+              <FileName>mbn-v2_w035_classifier_int8.tflite.cc</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Model\CPU_NPU_mixed\student035_kd_v2_cls_int8.tflite.cc</FilePath>
+              <FilePath>..\Model\mbn-v2_w035_classifier_int8.tflite.cc</FilePath>
             </File>
             <File>
-              <FileName>student035_kd_v2_fe_int8_vela.tflite.cc</FileName>
+              <FileName>mbn-v2_w035_feature_extractor_int8_vela.tflite.cc</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Model\CPU_NPU_mixed\student035_kd_v2_fe_int8_vela.tflite.cc</FilePath>
+              <FilePath>..\Model\mbn-v2_w035_feature_extractor_int8_vela.tflite.cc</FilePath>
             </File>
             <File>
-              <FileName>student035_kd_v2_int8.tflite.cc</FileName>
+              <FileName>mbn-v2_w035_int8_vela.tflite.cc</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Model\CPU_only\student035_kd_v2_int8.tflite.cc</FilePath>
+              <FilePath>..\Model\mbn-v2_w035_int8_vela.tflite.cc</FilePath>
             </File>
           </Files>
         </Group>
