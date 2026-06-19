@@ -163,10 +163,10 @@ void UART_ProcessCommand(char *cmdBuf)
         return;
     }
 
-    /* ---- "zo_set_lr <value>" ---- */
-    if (std::strncmp(cmdBuf, "zo_set_lr ", 10) == 0)
+    /* ---- "zo_lr <value>" ---- */
+    if (std::strncmp(cmdBuf, "zo_lr ", 6) == 0)
     {
-        float val = (float)std::atof(cmdBuf + 10);
+        float val = (float)std::atof(cmdBuf + 6);
         if (val > 0.0f) {
             zoLearningRate = val;
             info("[ZO] Learning rate set to %.6f\r\n", zoLearningRate);
@@ -176,10 +176,10 @@ void UART_ProcessCommand(char *cmdBuf)
         return;
     }
 
-    /* ---- "zo_set_q <value>" ---- */
-    if (std::strncmp(cmdBuf, "zo_set_q ", 9) == 0)
+    /* ---- "zo_q <value>" ---- */
+    if (std::strncmp(cmdBuf, "zo_q ", 5) == 0)
     {
-        int val = std::atoi(cmdBuf + 9);
+        int val = std::atoi(cmdBuf + 5);
         if (val > 0) {
             zoNumPerturbations = val;
             info("[ZO] Perturbations Q set to %d\r\n", zoNumPerturbations);
@@ -189,13 +189,13 @@ void UART_ProcessCommand(char *cmdBuf)
         return;
     }
 
-    /* ---- "zo_set_method np|wp" ----
+    /* ---- "zo_method np|wp" ----
      * Locked once a training run has started: a comparison run must stay on one
      * method. Switch is only accepted before the first step (or after zo_reset).
      * No command at all → default NP (zoMethod initialised to ZO_METHOD_NP). */
-    if (std::strncmp(cmdBuf, "zo_set_method ", 14) == 0)
+    if (std::strncmp(cmdBuf, "zo_method ", 10) == 0)
     {
-        const char *methodStr = cmdBuf + 14;
+        const char *methodStr = cmdBuf + 10;
         while (*methodStr == ' ') methodStr++; /* skip spaces */
 
         int requested;
@@ -263,7 +263,7 @@ void UART_ProcessCommand(char *cmdBuf)
         } else if (std::strcmp(tokenStr, "init") == 0) {
             LogConfig_Enable(LOG_MODEL_INIT);
             info("[LOG] LOG_MODEL_INIT enabled\r\n");
-        } else if (std::strcmp(tokenStr, "inference") == 0) {
+        } else if (std::strcmp(tokenStr, "inf") == 0) {
             LogConfig_Enable(LOG_INFERENCE_DETAIL);
             info("[LOG] LOG_INFERENCE_DETAIL enabled\r\n");
         } else if (std::strcmp(tokenStr, "zo") == 0) {
@@ -271,7 +271,7 @@ void UART_ProcessCommand(char *cmdBuf)
             info("[LOG] LOG_ZO_TRAINING enabled\r\n");
         } else {
             info("[LOG] Unknown token: %s\r\n", tokenStr);
-            info("[LOG] Valid tokens: load, init, inference, zo\r\n");
+            info("[LOG] Valid tokens: load, init, inf, zo\r\n");
         }
         return;
     }
@@ -288,7 +288,7 @@ void UART_ProcessCommand(char *cmdBuf)
         } else if (std::strcmp(tokenStr, "init") == 0) {
             LogConfig_Disable(LOG_MODEL_INIT);
             info("[LOG] LOG_MODEL_INIT disabled\r\n");
-        } else if (std::strcmp(tokenStr, "inference") == 0) {
+        } else if (std::strcmp(tokenStr, "inf") == 0) {
             LogConfig_Disable(LOG_INFERENCE_DETAIL);
             info("[LOG] LOG_INFERENCE_DETAIL disabled\r\n");
         } else if (std::strcmp(tokenStr, "zo") == 0) {
@@ -296,7 +296,7 @@ void UART_ProcessCommand(char *cmdBuf)
             info("[LOG] LOG_ZO_TRAINING disabled\r\n");
         } else {
             info("[LOG] Unknown token: %s\r\n", tokenStr);
-            info("[LOG] Valid tokens: load, init, inference, zo\r\n");
+            info("[LOG] Valid tokens: load, init, inf, zo\r\n");
         }
         return;
     }

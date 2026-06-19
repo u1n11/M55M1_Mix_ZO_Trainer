@@ -287,8 +287,9 @@ int main()
     info("  zo_reset    - Restore original weights\n");
     info("  zo_status   - Show trainer source/step status\n");
     info("  zo_save     - Force save current trainer snapshot to flash\n");
-    info("  zo_set_lr <val>  - Set learning rate (default 0.01)\n");
-    info("  zo_set_q <val>   - Set perturbation count Q (default 20)\n");
+    info("  zo_lr <val>      - Set learning rate (default 0.01)\n");
+    info("  zo_q <val>       - Set perturbation count Q (default 20)\n");
+    info("  zo_method np|wp  - Set ZO method (before first step)\n");
 #endif /* USE_SPLIT_MODEL */
 
     /* ============================================================== */

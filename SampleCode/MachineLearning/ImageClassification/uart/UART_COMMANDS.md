@@ -28,7 +28,7 @@ The set of available commands depends on the compile-time flag `USE_SPLIT_MODEL`
 | Flag | Mode | Active Commands |
 |------|------|-----------------|
 | `USE_SPLIT_MODEL=0` | Standard single-model | `load_model`, `this_is?`, `show_graph` |
-| `USE_SPLIT_MODEL=1` | Split extractor + classifier with ZO training | `load_model`, `this_is?`, `zo_init`, `zo_reset`, `zo_status`, `zo_save`, `tra=<label>`, `zo_set_lr <val>`, `zo_set_q <val>`, `zo_set_method <np\|wp>` |
+| `USE_SPLIT_MODEL=1` | Split extractor + classifier with ZO training | `load_model`, `this_is?`, `zo_init`, `zo_reset`, `zo_status`, `zo_save`, `tra=<label>`, `zo_lr <val>`, `zo_q <val>`, `zo_method <np\|wp>` |
 
 Log control commands (`log_all`, `log_none`, `log_status`, `log_on <token>`, `log_off <token>`) are available in **both** modes.
 
@@ -232,7 +232,7 @@ tra=cat
 ```
 
 - `method=NP|WP` — the gradient-estimation method used this step (set via
-  `zo_set_method`; NP by default).
+  `zo_method`; NP by default).
 
 The device reports **raw per-step measurements only**. It performs no
 convergence judgement and never changes training behaviour based on these
@@ -259,7 +259,7 @@ values — the external host decides convergence/stopping from this log series.
 
 ---
 
-### `zo_set_lr <value>`
+### `zo_lr <value>`
 
 **Purpose**: Set the ZO-SGD learning rate. Must be a positive float.
 
@@ -267,7 +267,7 @@ values — the external host decides convergence/stopping from this log series.
 
 **Example**:
 ```
-zo_set_lr 0.005
+zo_lr 0.005
 ```
 
 **Expected MCU output**:
@@ -284,7 +284,7 @@ zo_set_lr 0.005
 
 ---
 
-### `zo_set_q <value>`
+### `zo_q <value>`
 
 **Purpose**: Set the number of Rademacher perturbations Q per training step. Must be a positive integer. Higher Q gives a better gradient estimate but each step takes longer.
 
@@ -292,7 +292,7 @@ zo_set_lr 0.005
 
 **Example**:
 ```
-zo_set_q 50
+zo_q 50
 ```
 
 **Expected MCU output**:
@@ -309,7 +309,7 @@ zo_set_q 50
 
 ---
 
-### `zo_set_method <np|wp>`
+### `zo_method <np|wp>`
 
 **Purpose**: Select the zeroth-order gradient-estimation method for `tra=` steps.
 
@@ -327,7 +327,7 @@ releases the lock). With no command issued, the method defaults to **NP**.
 
 **Example**:
 ```
-zo_set_method wp
+zo_method wp
 ```
 
 **Expected MCU output**:
@@ -351,7 +351,7 @@ zo_set_method wp
 ```
 
 > **Note on hyper-parameters**: WP applies the GNS factor with the full
-> perturbation dimension `d = C·F + C` (≫ C), so the *same* `zo_set_lr` value
+> perturbation dimension `d = C·F + C` (≫ C), so the *same* `zo_lr` value
 > moves the INT8 weights far less under WP than under NP. Expect WP to need a
 > larger LR and/or larger Q to register non-zero `delta_params`. This is the
 > dimensionality/variance penalty WP pays — and the headline result of the
@@ -420,7 +420,7 @@ By default, only essential output is shown (results, timing, memory usage). Verb
 |-------|---------|
 | `load` | Model binary and arena information during load (`LOG_MODEL_LOAD`) |
 | `init` | Model initialisation diagnostics (`LOG_MODEL_INIT`) |
-| `inference` | Per-layer inference detail (`LOG_INFERENCE_DETAIL`) |
+| `inf` | Per-layer inference detail (`LOG_INFERENCE_DETAIL`) |
 | `zo` | ZO trainer initialisation and step detail (`LOG_ZO_TRAINING`) |
 
 **Example**:
@@ -436,7 +436,7 @@ log_on zo
 **Error output** (unknown token):
 ```
 [LOG] Unknown token: hyperram
-[LOG] Valid tokens: load, init, inference, zo
+[LOG] Valid tokens: load, init, inf, zo
 ```
 
 ---
@@ -468,7 +468,7 @@ log_off load
 | Timing and memory usage | Yes | Always on |
 | Model load / arena detail | No | `log_on load` |
 | Model init diagnostics | No | `log_on init` |
-| Per-layer inference detail | No | `log_on inference` |
+| Per-layer inference detail | No | `log_on inf` |
 | ZO trainer init / step detail | No | `log_on zo` |
 | Deep TFLM allocator / subgraph dump | No | Build-time: `IMGCLS_ENABLE_MODEL_LOAD_VERBOSE_LOGS=1` |
 
@@ -479,13 +479,13 @@ log_off load
 | MCU output | Cause |
 |-----------|-------|
 | `[ERR] Unknown command: <cmd>` | Typo, or command not compiled into this build mode |
-| `[LOG] Unknown token: <x>` | Token name is not one of `load`, `init`, `inference`, `zo` |
+| `[LOG] Unknown token: <x>` | Token name is not one of `load`, `init`, `inf`, `zo` |
 | `[ZO] Trainer not initialised` | `zo_reset`/`zo_status`/`zo_save` called before `zo_init` |
 | `[ZO] Unknown label '<x>'` | Label string does not match any entry in `labels[]` |
-| `[ZO] Invalid learning rate (must be > 0)` | `zo_set_lr` value is zero or negative |
-| `[ZO] Invalid Q value (must be > 0)` | `zo_set_q` value is zero or negative |
-| `[ZO] Unknown method '<x>'` | `zo_set_method` value is not `np` or `wp` |
-| `[ZO] Cannot switch method after <n> step(s). Send 'zo_reset' first.` | `zo_set_method` issued mid-run (step count > 0); locked for comparison integrity |
+| `[ZO] Invalid learning rate (must be > 0)` | `zo_lr` value is zero or negative |
+| `[ZO] Invalid Q value (must be > 0)` | `zo_q` value is zero or negative |
+| `[ZO] Unknown method '<x>'` | `zo_method` value is not `np` or `wp` |
+| `[ZO] Cannot switch method after <n> step(s). Send 'zo_reset' first.` | `zo_method` issued mid-run (step count > 0); locked for comparison integrity |
 | `[ZO] Manual save to flash failed` | Flash write error during `zo_save` |
 | `[ZO] Reset done in RAM, but clearing flash snapshot failed` | `zo_reset` succeeded in RAM but flash erase failed |
 
@@ -509,9 +509,9 @@ this_is?
 ```
 load_model          ← load extractor + classifier
 zo_init             ← copy weights to mutable RAM; restore flash snapshot if present
-zo_set_method np    ← (optional) pick NP or WP; MUST be set before the first tra=
-zo_set_lr 0.01      ← (optional) tune learning rate
-zo_set_q 20         ← (optional) tune perturbation count
+zo_method np        ← (optional) pick NP or WP; MUST be set before the first tra=
+zo_lr 0.01          ← (optional) tune learning rate
+zo_q 20             ← (optional) tune perturbation count
 this_is?            ← baseline accuracy before training
 
 # Training loop — repeat per class, per epoch:
@@ -550,8 +550,8 @@ for _ in range(5):
 # ZO training
 print(send_cmd('load_model'))
 print(send_cmd('zo_init'))
-print(send_cmd('zo_set_lr 0.01'))
-print(send_cmd('zo_set_q 20'))
+print(send_cmd('zo_lr 0.01'))
+print(send_cmd('zo_q 20'))
 for label in ['cat', 'dog', 'airplane']:
     for _ in range(30):
         print(send_cmd(f'tra={label}'))

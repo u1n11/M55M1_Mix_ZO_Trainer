@@ -1011,7 +1011,7 @@ static void DoZOInit(void)
     const ZOTrainer::FCInfo& fc = zoTrainer->GetFCInfo();
     info_critical("[ZO] Ready. FC[%d in × %d out], mem=%zu bytes\r\n",
          fc.input_features, fc.output_classes, zoTrainer->GetMemoryUsed());
-    info_if_token(LOG_ZO_TRAINING, "[ZO] Commands: tra=<label>  zo_reset  zo_set_lr <val>  zo_set_q <val>\r\n");
+    info_if_token(LOG_ZO_TRAINING, "[ZO] Commands: tra=<label>  zo_reset  zo_lr <val>  zo_q <val>\r\n");
 }
 
 static void DoZOTrain(void)
