@@ -22,6 +22,10 @@
 #include "BufAttributes.hpp"
 #include "Labels.hpp"
 
+#ifndef CPU_ACTIVATION_BUF_SZ
+    #define CPU_ACTIVATION_BUF_SZ  0x00020000  /* 128 KB */
+#endif
+
 #if defined (__USE_DISPLAY__)
     #include "Display.h"
 #endif
@@ -132,48 +136,13 @@ static void DoLoadModel(void)
     extern uint32_t SystemCoreClock;
     const uint64_t t0 = pmu_get_systick_Count();
 
-    /* Detect whether the model is for NPU (has EthosU custom ops) or CPU-only.
-     * NPU model uses internal SRAM arena; CPU model uses external HyperRAM arena. */
     const uint8_t *modelPtr = arm::app::mobilenet::GetModelPointer();
     size_t         modelLen = arm::app::mobilenet::GetModelLen();
     const tflite::Model *fbModel = ::tflite::GetModel(modelPtr);
 
-    bool isNpuModel = false;
-    if (fbModel && fbModel->subgraphs() && fbModel->subgraphs()->size() > 0)
-    {
-        const auto *subgraph = fbModel->subgraphs()->Get(0);
-        const auto *opcodes  = fbModel->operator_codes();
-        if (subgraph && subgraph->operators() && opcodes)
-        {
-            for (uint32_t i = 0; i < subgraph->operators()->size(); i++)
-            {
-                const auto *op     = subgraph->operators()->Get(i);
-                const auto *opcode = opcodes->Get(op->opcode_index());
-                if (opcode && tflite::GetBuiltinCode(opcode) == tflite::BuiltinOperator_CUSTOM
-                    && opcode->custom_code()
-                    && std::strstr(opcode->custom_code()->c_str(), "ethos") != nullptr)
-                {
-                    isNpuModel = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    uint8_t *arenaPtr;
-    uint32_t arenaSize;
-    if (isNpuModel)
-    {
-        arenaPtr  = arm::app::tensorArena;
-        arenaSize = sizeof(arm::app::tensorArena);
-        info_if_token(LOG_MODEL_LOAD, "[ISM] Using SRAM tensor arena (%u bytes)\r\n", arenaSize);
-    }
-    else
-    {
-        arenaPtr  = arm::app::cpuTensorArena;
-        arenaSize = CPU_ACTIVATION_BUF_SZ;
-        info_if_token(LOG_MODEL_LOAD, "[ISM] Using HyperRAM tensor arena (%u bytes) at 0x%p\r\n", arenaSize, arenaPtr);
-    }
+    uint8_t *arenaPtr  = arm::app::tensorArena;
+    uint32_t arenaSize = sizeof(arm::app::tensorArena);
+    info_if_token(LOG_MODEL_LOAD, "[ISM] Using SRAM tensor arena (%u bytes)\r\n", arenaSize);
 
     /* Dump all operator types required by this model for diagnostics */
     if (fbModel && fbModel->operator_codes())
@@ -277,29 +246,6 @@ static void DoLoadModel(void)
         }
     }
 
-    /* Quick HyperRAM sanity test: write/read at start, middle, and end of arena */
-    if (!isNpuModel)
-    {
-        volatile uint32_t *p;
-        const uint32_t testPattern = 0xDEADBEEF;
-        const uint32_t offsets[] = { 0, arenaSize / 2, arenaSize - 4 };
-
-        info_if_token(LOG_HYPERRAM_TEST, "[ISM] HyperRAM sanity test...\r\n");
-        for (int t = 0; t < 3; t++)
-        {
-            p = (volatile uint32_t *)(arenaPtr + offsets[t]);
-            *p = testPattern;
-            uint32_t readback = *p;
-            if (readback != testPattern)
-            {
-                printf_err("[ISM] HyperRAM FAIL at 0x%p: wrote 0x%08X read 0x%08X\r\n",
-                           p, testPattern, readback);
-                return;
-            }
-        }
-        info_if_token(LOG_HYPERRAM_TEST, "[ISM] HyperRAM OK (tested 3 locations)\r\n");
-    }
-
     if (!model.Init(arenaPtr, arenaSize, modelPtr, modelLen))
     {
         printf_err("[ISM] Failed to initialise model\r\n");
@@ -311,7 +257,7 @@ static void DoLoadModel(void)
     const std::vector<ARM_MPU_Region_t> mpuConfig =
     {
         {
-            // Tensor arena (SRAM or HyperRAM)
+            // Tensor arena (SRAM)
             ARM_MPU_RBAR(((unsigned int)arenaPtr),             // Base
                          ARM_MPU_SH_NON,    // Non-shareable
                          0,                 // Read-only
@@ -367,6 +313,38 @@ static void DoLoadModel(void)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Center-crop ROI helper                                            */
+/* ------------------------------------------------------------------ */
+/* A centered SQUARE ROI scaled to the square model input fixes the
+ * 4:3 (320x240) -> 1:1 (224x224) aspect distortion that plain full-frame
+ * stretching causes. The square crop itself is mandatory; only the zoom
+ * factor below is a tuning knob.
+ *
+ * kCropFraction = fraction of the shorter side kept as the square crop:
+ *   224/256 = 0.875  -> exactly matches PC Resize(256)+CenterCrop(224),
+ *                       but zooms in and may clip an object that already
+ *                       fills the camera frame.
+ *   1.0              -> keeps the full shorter side (only the unavoidable
+ *                       4:3->1:1 horizontal excess is dropped, 0% vertical),
+ *                       never cuts into the object. Best when the camera
+ *                       already frames the object near full-frame.
+ * Start at 1.0; A/B test against 0.875 if accuracy still lags. */
+static constexpr float kCropFraction = 1.0f;
+
+static void SetCenterCropRoi(rectangle_t &r, const image_t &frame)
+{
+    const int shortSide = (frame.w < frame.h) ? frame.w : frame.h;
+    int crop = (int)((float)shortSide * kCropFraction + 0.5f);
+    if (crop < 1)         crop = shortSide;   /* degenerate-size guard */
+    if (crop > shortSide) crop = shortSide;   /* never exceed the frame  */
+
+    r.w = crop;
+    r.h = crop;
+    r.x = (frame.w - crop) / 2;               /* centered */
+    r.y = (frame.h - crop) / 2;
+}
+
 static void DoInference(void)
 {
     if (!modelLoaded)
@@ -385,10 +363,9 @@ static void DoInference(void)
     /* Resize framebuffer image to model input */
     image_t resizeImg;
 
-    roi.x = 0;
-    roi.y = 0;
-    roi.w = frameBuffer.w;
-    roi.h = frameBuffer.h;
+    /* Center-crop (match PC Resize(256)+CenterCrop(224)) instead of
+     * stretching the whole frame into the square model input. */
+    SetCenterCropRoi(roi, frameBuffer);
 
     resizeImg.w = inputImgCols;
     resizeImg.h = inputImgRows;
@@ -761,37 +738,14 @@ static void DoLoadSplitModel(void)
         return;
     }
 
-    /* ---- Classifier (CPU → HyperRAM arena) ---- */
+    /* ---- Classifier (CPU → SRAM arena) ---- */
     const uint8_t *clsPtr  = arm::app::classifier_cpu_int8::GetModelPointer();
     size_t         clsLen  = arm::app::classifier_cpu_int8::GetModelLen();
     uint8_t       *clsArena     = arm::app::cpuTensorArena;
     uint32_t       clsArenaSize = CPU_ACTIVATION_BUF_SZ;
 
-    info_if_token(LOG_MODEL_LOAD, "[ISM] Classifier: %zu bytes, HyperRAM arena %u bytes at 0x%p\r\n",
+    info_if_token(LOG_MODEL_LOAD, "[ISM] Classifier: %zu bytes, SRAM arena %u bytes at 0x%p\r\n",
          clsLen, clsArenaSize, clsArena);
-
-    /* Quick HyperRAM sanity test */
-    {
-        volatile uint32_t *p;
-        const uint32_t testPattern = 0xDEADBEEF;
-        const uint32_t offsets[] = { 0, clsArenaSize / 2, clsArenaSize - 4 };
-
-        info_if_token(LOG_HYPERRAM_TEST, "[ISM] HyperRAM sanity test...\r\n");
-        for (int t = 0; t < 3; t++)
-        {
-            p = (volatile uint32_t *)(clsArena + offsets[t]);
-            *p = testPattern;
-            uint32_t readback = *p;
-            if (readback != testPattern)
-            {
-                printf_err("[ISM] HyperRAM FAIL at 0x%p: wrote 0x%08X read 0x%08X\r\n",
-                           p, testPattern, readback);
-                g_modelLoadFailed = true;
-                return;
-            }
-        }
-        info_if_token(LOG_HYPERRAM_TEST, "[ISM] HyperRAM OK\r\n");
-    }
 
     if (!classifierModel.Init(clsArena, clsArenaSize, clsPtr, clsLen))
     {
@@ -815,7 +769,7 @@ static void DoLoadSplitModel(void)
         return;
     }
 
-    /* ---- MPU: mark both arenas as write-through cacheable ---- */
+    /* ---- MPU: mark tensor arenas as write-through cacheable ---- */
     const std::vector<ARM_MPU_Region_t> mpuConfig =
     {
         {
@@ -823,13 +777,6 @@ static void DoLoadSplitModel(void)
             ARM_MPU_RBAR(((unsigned int)extArena),
                          ARM_MPU_SH_NON, 0, 1, 1),
             ARM_MPU_RLAR((((unsigned int)extArena) + extArenaSize - 1),
-                         eMPU_ATTR_CACHEABLE_WTRA)
-        },
-        {
-            /* HyperRAM tensor arena (classifier / CPU) */
-            ARM_MPU_RBAR(((unsigned int)clsArena),
-                         ARM_MPU_SH_NON, 0, 1, 1),
-            ARM_MPU_RLAR((((unsigned int)clsArena) + clsArenaSize - 1),
                          eMPU_ATTR_CACHEABLE_WTRA)
         },
 #if defined (__USE_CCAP__)
@@ -905,10 +852,9 @@ static void DoSplitInference(void)
     /* ---- Resize camera frame → extractor input ---- */
     image_t resizeImg;
 
-    roi.x = 0;
-    roi.y = 0;
-    roi.w = frameBuffer.w;
-    roi.h = frameBuffer.h;
+    /* Center-crop (match PC Resize(256)+CenterCrop(224)) instead of
+     * stretching the whole frame into the square model input. */
+    SetCenterCropRoi(roi, frameBuffer);
 
     resizeImg.w = inputImgCols;
     resizeImg.h = inputImgRows;
@@ -1095,10 +1041,9 @@ static void DoZOTrain(void)
 
     /* Resize camera frame → extractor input */
     image_t resizeImg;
-    roi.x = 0;
-    roi.y = 0;
-    roi.w = frameBuffer.w;
-    roi.h = frameBuffer.h;
+    /* Center-crop (match PC Resize(256)+CenterCrop(224)) instead of
+     * stretching the whole frame into the square model input. */
+    SetCenterCropRoi(roi, frameBuffer);
 
     resizeImg.w      = inputImgCols;
     resizeImg.h      = inputImgRows;
@@ -1142,18 +1087,32 @@ static void DoZOTrain(void)
     extern uint32_t SystemCoreClock;
     uint64_t t0 = pmu_get_systick_Count();
 
-    float loss = zoTrainer->TrainStep(classifierModel, zoTargetLabel,
-                                      zoLearningRate, zoNumPerturbations);
+    float loss = (zoMethod == ZO_METHOD_WP)
+                 ? zoTrainer->TrainStepWP(classifierModel, zoTargetLabel,
+                                          zoLearningRate, zoNumPerturbations)
+                 : zoTrainer->TrainStep(classifierModel, zoTargetLabel,
+                                        zoLearningRate, zoNumPerturbations);
 
     uint64_t elapsed_cyc = pmu_get_systick_Count() - t0;
     uint32_t elapsed_us  = (uint32_t)(elapsed_cyc * 1000000ULL / SystemCoreClock);
 
+    /* Device reports raw per-step measurements only; the external host decides
+     * convergence/stopping from this log series. No on-device judgement here. */
+    const ZOTrainer::StepMetrics& m = zoTrainer->GetLastMetrics();
+    (void)loss; /* full A→B series is in the metrics struct */
     const std::string& labelName = labels[(size_t)zoTargetLabel];
-    info_critical("[FRAME: %u] [ZO] Step %d | Label: %s(%d) | Loss: %.4f | Time: %.2fms | Mem: %zu bytes\r\n",
+    const char* methodName = (zoMethod == ZO_METHOD_WP) ? "WP" : "NP";
+    info_critical("[FRAME: %u] [ZO] Step %d | method=%s | target=%s(%d) | loss=%.4f->%.4f | loss_ema=%.4f | "
+                  "delta_params=%.2f%% | grad_norm=%.4f | lr=%.6f | Q=%d | Time: %.2fms | Mem: %zu bytes\r\n",
          inferenceFrameCount,
          zoTrainer->GetStepCount(),
+         methodName,
          labelName.c_str(), zoTargetLabel,
-         loss,
+         m.loss_before, m.loss_after,
+         m.loss_ema,
+         m.delta_params * 100.0f,
+         m.grad_norm,
+         zoLearningRate, zoNumPerturbations,
          elapsed_us / 1000.0f,
          zoTrainer->GetMemoryUsed());
 

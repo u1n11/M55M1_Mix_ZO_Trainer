@@ -10,13 +10,12 @@
  * Use them to selectively enable/disable detailed logs during development. */
 
 enum LogToken : uint16_t {
-    LOG_MODEL_LOAD     = 0x0001,  /* Detailed model loading info (arena, opcodes, quantization) */
-    LOG_MODEL_INIT     = 0x0002,  /* Model initialization diagnostics */
-    LOG_HYPERRAM_TEST  = 0x0004,  /* HyperRAM sanity test details */
-    LOG_INFERENCE_DETAIL = 0x0008, /* Detailed inference per-layer times */
-    LOG_ZO_TRAINING    = 0x0010,  /* ZO trainer initialization & step details */
-    
-    LOG_ALL_VERBOSE    = 0xFFFF,  /* Enable all debug logs */
+    LOG_MODEL_LOAD       = 0x0001,  /* Detailed model loading info (arena, opcodes, quantization) */
+    LOG_MODEL_INIT       = 0x0002,  /* Model initialization diagnostics */
+    LOG_INFERENCE_DETAIL = 0x0008,  /* Detailed inference per-layer times */
+    LOG_ZO_TRAINING      = 0x0010,  /* ZO trainer initialization & step details */
+
+    LOG_ALL_VERBOSE      = 0xFFFF,  /* Enable all debug logs */
 };
 
 /* ================================================================== */

@@ -36,7 +36,6 @@ void LogConfig_Print(void)
     info("\r\n[LOG CONFIG] Current log tokens:\r\n");
     info("  LOG_MODEL_LOAD:       %s\r\n", (g_logTokens & LOG_MODEL_LOAD)      ? "ON" : "OFF");
     info("  LOG_MODEL_INIT:       %s\r\n", (g_logTokens & LOG_MODEL_INIT)      ? "ON" : "OFF");
-    info("  LOG_HYPERRAM_TEST:    %s\r\n", (g_logTokens & LOG_HYPERRAM_TEST)   ? "ON" : "OFF");
     info("  LOG_INFERENCE_DETAIL: %s\r\n", (g_logTokens & LOG_INFERENCE_DETAIL)? "ON" : "OFF");
     info("  LOG_ZO_TRAINING:      %s\r\n", (g_logTokens & LOG_ZO_TRAINING)     ? "ON" : "OFF");
     info("\r\n");

@@ -12,10 +12,8 @@
 #include "log_macros.h"
 
 #include "ethosu_npu_init.h"
-#include "hyperflash_code.h"
 
 #define DESIGN_NAME "M55M1"
-#define HYPERFLASH_SPIM_PORT SPIM0
 
 static void SYS_Init(void)
 {
@@ -78,7 +76,7 @@ static void SYS_Init(void)
 /**
   * @brief Initiate the hardware resources of board
   * @return 0: Success, <0: Fail
-  * @details Initiate clock, UART, NPU, hyperflash/hyperRAM
+  * @details Initiate clock, UART, NPU
   * \hideinitializer
   */
 int BoardInit(void)
@@ -90,10 +88,6 @@ int BoardInit(void)
     /* UART init - will enable valid use of printf (stdout
      * re-directed at this UART (UART6) */
     InitDebugUart();
-
-    /* Initialise HyperRAM on SPIM0 — accessible at 0x82000000 after init.
-     * Must be called before SYS_LockReg() as it enables SPIM0/OTFC0 clocks. */
-    SPIM_HyperRAM_Init(HYPERFLASH_SPIM_PORT);
 
     SYS_LockReg();                   /* Lock register protect */
 

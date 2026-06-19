@@ -4,3 +4,15 @@
 *.d
 *.o
 release
+
+# KEIL IDE session / per-user state
+SampleCode/MachineLearning/ImageClassification/Keil/*.uvguix.*
+SampleCode/MachineLearning/ImageClassification/Keil/*.uvoptx
+SampleCode/MachineLearning/ImageClassification/Keil/Nu_Link_Driver.ini
+SampleCode/MachineLearning/ImageClassification/Keil/EventRecorderStub.scvd
+
+# KEIL generated build artifacts — .axf and .map are intentionally kept for memory analysis
+SampleCode/MachineLearning/ImageClassification/Keil/Objects/*.dep
+SampleCode/MachineLearning/ImageClassification/Keil/Objects/*.lnp
+SampleCode/MachineLearning/ImageClassification/Keil/Objects/*.htm
+SampleCode/MachineLearning/ImageClassification/Keil/Objects/ExtDll.iex

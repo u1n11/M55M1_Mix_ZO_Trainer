@@ -338,7 +338,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>NVT_VECTOR_ON_FLASH, TF_LITE_STATIC_MEMORY, ARM_MATH_DSP, ARM_NPU, ACTIVATION_BUF_SZ=0x000D0000, CPU_ACTIVATION_BUF_SZ=0x00800000</Define>
+              <Define>NVT_VECTOR_ON_FLASH, TF_LITE_STATIC_MEMORY, ARM_MATH_DSP, ARM_NPU, ACTIVATION_BUF_SZ=0x000D0000</Define>
               <Undefine></Undefine>
               <IncludePath>..\..\..\..\Library\CMSIS\Core\Include;..\..\..\..\Library\Device\Nuvoton\M55M1\Include;..\..\..\..\Library\CMSIS\DSP\Include;..\..\..\..\Library\StdDriver\inc;..\..\..\..\Library\StdDriver\inc\npu;..\..\..\..\ThirdParty\openmv\omv\imlib;..\..\..\..\ThirdParty\openmv\omv\alloc;..\..\..\..\ThirdParty\openmv\omv\common;..\..\..\..\ThirdParty\openmv\omv\Lib;..\..\..\..\ThirdParty\tflite_micro;..\..\..\..\ThirdParty\tflite_micro\_deps\tensorflow-flatbuffers-src\include;..\..\..\..\ThirdParty\tflite_micro\_deps\tensorflow-gemlowp-src;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\application\api\common\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\log\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\math\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\application\main\include;..\..\..\..\ThirdParty\ml-embedded-evaluation-kit\source\profiler\include;..\Device\include;..\Model\include;..\NPU\include;..\ProfilerCounter\include;..\;..\uart\include;..\..\..\..\ThirdParty\tflite_micro\tensorflow\lite\micro\kernels\cmsis_nn;..\..\..\..\Library\CMSIS\NN</IncludePath>
             </VariousControls>
@@ -550,19 +550,19 @@
               <FilePath>..\Model\ZOTrainer.cpp</FilePath>
             </File>
             <File>
-              <FileName>student035_kd_v2_cls_int8.tflite.cc</FileName>
+              <FileName>mbn-v2_w035_classifier_int8.tflite.cc</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Model\CPU_NPU_mixed\student035_kd_v2_cls_int8.tflite.cc</FilePath>
+              <FilePath>..\Model\mbn-v2_w035_classifier_int8.tflite.cc</FilePath>
             </File>
             <File>
-              <FileName>student035_kd_v2_fe_int8_vela.tflite.cc</FileName>
+              <FileName>mbn-v2_w035_feature_extractor_int8_vela.tflite.cc</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Model\CPU_NPU_mixed\student035_kd_v2_fe_int8_vela.tflite.cc</FilePath>
+              <FilePath>..\Model\mbn-v2_w035_feature_extractor_int8_vela.tflite.cc</FilePath>
             </File>
             <File>
-              <FileName>student035_kd_v2_int8.tflite.cc</FileName>
+              <FileName>mbn-v2_w035_int8_vela.tflite.cc</FileName>
               <FileType>8</FileType>
-              <FilePath>..\Model\CPU_only\student035_kd_v2_int8.tflite.cc</FilePath>
+              <FilePath>..\Model\mbn-v2_w035_int8_vela.tflite.cc</FilePath>
             </File>
           </Files>
         </Group>

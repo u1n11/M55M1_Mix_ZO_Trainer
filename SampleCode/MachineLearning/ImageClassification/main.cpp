@@ -62,11 +62,11 @@ namespace app
 /* Tensor arena buffer for NPU model (in SRAM) */
 uint8_t tensorArena[ACTIVATION_BUF_SZ] ACTIVATION_BUF_ATTRIBUTE;
 
-/* Tensor arena buffer for CPU model (in external HyperRAM at 0x82000000) */
+/* Tensor arena buffer for CPU model (in SRAM, split-model classifier path) */
 #ifndef CPU_ACTIVATION_BUF_SZ
-    #define CPU_ACTIVATION_BUF_SZ  0x00800000  /* 8 MB */
+    #define CPU_ACTIVATION_BUF_SZ  0x00020000  /* 128 KB */
 #endif
-__attribute__((aligned(16), section(".bss.NoInit.cpu_activation_buf")))
+__attribute__((aligned(16), section(".bss.NoInit.activation_buf_sram")))
 uint8_t cpuTensorArena[CPU_ACTIVATION_BUF_SZ];
 
 /* Optional getter function for the model pointer and its size. */
@@ -160,8 +160,9 @@ std::string lastInferenceResult = "";
 #if defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1)
 ZOTrainer* zoTrainer          = nullptr;
 int        zoTargetLabel      = -1;
-float      zoLearningRate     = 0.01f;
-int        zoNumPerturbations = 20;
+float      zoLearningRate     = 0.01f; /* default; host may override via UART */
+int        zoNumPerturbations = 50;    /* default Q; host may override via UART */
+int        zoMethod           = ZO_METHOD_NP; /* default NP; host may set WP before first step */
 #endif
 
 /* ------------------------------------------------------------------ */
