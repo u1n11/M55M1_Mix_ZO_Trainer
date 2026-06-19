@@ -30,7 +30,7 @@ The set of available commands depends on the compile-time flag `USE_SPLIT_MODEL`
 | `USE_SPLIT_MODEL=0` | Standard single-model | `load_model`, `this_is?`, `show_graph` |
 | `USE_SPLIT_MODEL=1` | Split extractor + classifier with ZO training | `load_model`, `this_is?`, `zo_init`, `zo_reset`, `zo_status`, `zo_save`, `tra=<label>`, `zo_lr <val>`, `zo_q <val>`, `zo_method <np\|wp>` |
 
-Log control commands (`log_all`, `log_none`, `log_status`, `log_on <token>`, `log_off <token>`) are available in **both** modes.
+Log control commands (`log_all`, `log_none`, `log_status`, `log_on <token>`, `log_off <token>`) and the system command `reboot` are available in **both** modes.
 
 ---
 
@@ -456,6 +456,23 @@ log_off load
 ```
 [LOG] LOG_MODEL_LOAD disabled
 ```
+
+---
+
+## System Commands
+
+### `reboot`
+
+**Purpose**: Perform a software reset of the MCU (CMSIS `NVIC_SystemReset()`). Available in **both** build modes.
+
+**Execution**: Synchronous — prints the message below, briefly waits for the UART FIFO to drain, then resets immediately. No further output until the device re-boots.
+
+**Expected MCU output**:
+```
+[SYS] Restarting...
+```
+
+**Note**: After reset the device returns to its power-on state — the model must be re-loaded (`load_model`) and, in split mode, the trainer re-initialised (`zo_init`). Any RAM-only ZO progress not persisted via `zo_save` is lost; a persisted flash snapshot survives the reset.
 
 ---
 

@@ -9,10 +9,21 @@
 #include "inference_mngt.h" /* Use ISM API (USE_SPLIT_MODEL already defined) */
 #include "log_macros.h"
 #include "LogConfig.hpp"
+#include "NuMicro.h" /* NVIC_SystemReset(), __NOP() */
 
 /* ------------------------------------------------------------------ */
 /*  Command Functions                                                 */
 /* ------------------------------------------------------------------ */
+
+/* Available in both build modes: software reset of the MCU. */
+static void Cmd_Restart(void)
+{
+    info("[SYS] Restarting...\r\n");
+    /* Let the UART FIFO drain before the core resets, otherwise the
+     * message above is lost. */
+    for (volatile int i = 0; i < 1000000; i++) { __NOP(); }
+    NVIC_SystemReset();
+}
 
 #if !(defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1))
 static void Cmd_LoadModel(void)
@@ -101,6 +112,7 @@ const CmdEntry g_cmd_table[] = {
     { "zo_status",   Cmd_ZOStatus   },
     { "zo_save",     Cmd_ZOSave     },
 #endif /* USE_SPLIT_MODEL */
+    { "reboot",      Cmd_Restart    },  /* Both modes: software MCU reset */
     { NULL,          NULL }        /* Terminator */
 };
 
