@@ -313,6 +313,38 @@ static void DoLoadModel(void)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Center-crop ROI helper                                            */
+/* ------------------------------------------------------------------ */
+/* A centered SQUARE ROI scaled to the square model input fixes the
+ * 4:3 (320x240) -> 1:1 (224x224) aspect distortion that plain full-frame
+ * stretching causes. The square crop itself is mandatory; only the zoom
+ * factor below is a tuning knob.
+ *
+ * kCropFraction = fraction of the shorter side kept as the square crop:
+ *   224/256 = 0.875  -> exactly matches PC Resize(256)+CenterCrop(224),
+ *                       but zooms in and may clip an object that already
+ *                       fills the camera frame.
+ *   1.0              -> keeps the full shorter side (only the unavoidable
+ *                       4:3->1:1 horizontal excess is dropped, 0% vertical),
+ *                       never cuts into the object. Best when the camera
+ *                       already frames the object near full-frame.
+ * Start at 1.0; A/B test against 0.875 if accuracy still lags. */
+static constexpr float kCropFraction = 1.0f;
+
+static void SetCenterCropRoi(rectangle_t &r, const image_t &frame)
+{
+    const int shortSide = (frame.w < frame.h) ? frame.w : frame.h;
+    int crop = (int)((float)shortSide * kCropFraction + 0.5f);
+    if (crop < 1)         crop = shortSide;   /* degenerate-size guard */
+    if (crop > shortSide) crop = shortSide;   /* never exceed the frame  */
+
+    r.w = crop;
+    r.h = crop;
+    r.x = (frame.w - crop) / 2;               /* centered */
+    r.y = (frame.h - crop) / 2;
+}
+
 static void DoInference(void)
 {
     if (!modelLoaded)
@@ -331,10 +363,9 @@ static void DoInference(void)
     /* Resize framebuffer image to model input */
     image_t resizeImg;
 
-    roi.x = 0;
-    roi.y = 0;
-    roi.w = frameBuffer.w;
-    roi.h = frameBuffer.h;
+    /* Center-crop (match PC Resize(256)+CenterCrop(224)) instead of
+     * stretching the whole frame into the square model input. */
+    SetCenterCropRoi(roi, frameBuffer);
 
     resizeImg.w = inputImgCols;
     resizeImg.h = inputImgRows;
@@ -821,10 +852,9 @@ static void DoSplitInference(void)
     /* ---- Resize camera frame → extractor input ---- */
     image_t resizeImg;
 
-    roi.x = 0;
-    roi.y = 0;
-    roi.w = frameBuffer.w;
-    roi.h = frameBuffer.h;
+    /* Center-crop (match PC Resize(256)+CenterCrop(224)) instead of
+     * stretching the whole frame into the square model input. */
+    SetCenterCropRoi(roi, frameBuffer);
 
     resizeImg.w = inputImgCols;
     resizeImg.h = inputImgRows;
@@ -1011,10 +1041,9 @@ static void DoZOTrain(void)
 
     /* Resize camera frame → extractor input */
     image_t resizeImg;
-    roi.x = 0;
-    roi.y = 0;
-    roi.w = frameBuffer.w;
-    roi.h = frameBuffer.h;
+    /* Center-crop (match PC Resize(256)+CenterCrop(224)) instead of
+     * stretching the whole frame into the square model input. */
+    SetCenterCropRoi(roi, frameBuffer);
 
     resizeImg.w      = inputImgCols;
     resizeImg.h      = inputImgRows;
