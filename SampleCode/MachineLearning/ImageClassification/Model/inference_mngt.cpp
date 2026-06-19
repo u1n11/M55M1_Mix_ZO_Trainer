@@ -19,6 +19,12 @@
 #include "NuMicro.h"
 #include "log_macros.h"
 
+#if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU
+/* The full CPU (non-NPU) model's activation arena exceeds on-chip SRAM, so it
+ * is placed in external HyperRAM (memory-mapped at 0x82000000 via SPIM DMM). */
+#include "hyperflash_code.h"   /* SPIM_HyperRAM_Init() */
+#endif
+
 #include "BufAttributes.hpp"
 #include "Labels.hpp"
 
@@ -151,6 +157,65 @@ static void SetCenterCropRoi(rectangle_t &r, const image_t &frame)
 
 #if !(defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1))
 
+#if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU
+/* ------------------------------------------------------------------ */
+/*  HyperRAM tensor arena (CPU single model)                          */
+/* ------------------------------------------------------------------ */
+/* The full int8 MobileNetV2 run entirely on the CPU needs >1.1 MB of
+ * activation arena, which does not fit in the 1 MB NPU-side SRAM. The
+ * board carries an 8 MB HyperRAM that the SPIM exposes as normal,
+ * memory-mapped RAM at 0x82000000 once put in Direct-Map mode, so the
+ * CPU arena lives there instead. (The NPU cannot reach HyperRAM, hence
+ * this path is CPU-only; the NPU build keeps the SRAM arena.) */
+#define HYPERRAM_ARENA_ADDR   (0x82000000UL)   /* SPIM0 DMM base (SPIM_HYPER_DMM0_SADDR) */
+#define HYPERRAM_ARENA_SZ     (0x00200000UL)   /* 2 MB — ample headroom over the ~1.2 MB peak */
+
+static bool g_hyperRamReady = false;
+
+/* Bring up HyperRAM (clock, pins, DLL training, enter DMM) once, then do a
+ * lightweight start/mid/end round-trip check on the memory-mapped arena. */
+static bool EnsureHyperRamArena(void)
+{
+    if (g_hyperRamReady)
+    {
+        return true;
+    }
+
+    info_if_token(LOG_MODEL_LOAD, "[ISM] Initialising HyperRAM (SPIM0 Direct-Map)...\r\n");
+
+    /* SPIM clock / pin MFP setup touch protected registers. */
+    SYS_UnlockReg();
+    SPIM_HyperRAM_Init(SPIM0);
+    SYS_LockReg();
+
+    /* Round-trip sanity test at start / middle / end of the arena. Clean+invalidate
+     * the D-cache between write and read so the read really fetches from HyperRAM
+     * rather than returning a cached copy. */
+    volatile uint32_t *p   = (volatile uint32_t *)HYPERRAM_ARENA_ADDR;
+    const uint32_t pattern = 0xDEADBEEFUL;
+    const uint32_t words   = (uint32_t)(HYPERRAM_ARENA_SZ / sizeof(uint32_t));
+    const uint32_t probes[3] = { 0u, words / 2u, words - 1u };
+
+    for (int i = 0; i < 3; i++) { p[probes[i]] = pattern; }
+    SCB_CleanInvalidateDCache();
+    for (int i = 0; i < 3; i++)
+    {
+        uint32_t got = p[probes[i]];
+        if (got != pattern)
+        {
+            printf_err("[ISM] HyperRAM sanity FAILED @word %u: got 0x%08X, expected 0x%08X\r\n",
+                       (unsigned)probes[i], (unsigned)got, (unsigned)pattern);
+            return false;
+        }
+    }
+
+    g_hyperRamReady = true;
+    info_if_token(LOG_MODEL_LOAD, "[ISM] HyperRAM ready @0x%08X (%u bytes)\r\n",
+                  (unsigned)HYPERRAM_ARENA_ADDR, (unsigned)HYPERRAM_ARENA_SZ);
+    return true;
+}
+#endif /* MODEL_MODE_SINGLE_CPU */
+
 static void DoLoadModel(void)
 {
     if (modelLoaded)
@@ -174,9 +239,25 @@ static void DoLoadModel(void)
     size_t         modelLen = arm::app::SINGLE_MODEL_NS::GetModelLen();
     const tflite::Model *fbModel = ::tflite::GetModel(modelPtr);
 
+#if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU
+    /* CPU model: arena lives in external HyperRAM (does not fit on-chip SRAM). */
+    if (!EnsureHyperRamArena())
+    {
+        printf_err("[ISM] HyperRAM unavailable; cannot load CPU model\r\n");
+        g_modelLoadFailed = true;
+        return;
+    }
+    uint8_t *arenaPtr  = (uint8_t *)HYPERRAM_ARENA_ADDR;
+    uint32_t arenaSize = (uint32_t)HYPERRAM_ARENA_SZ;
+    const uint8_t arenaMpuAttr = eMPU_ATTR_CACHEABLE_WBWARA; /* write-back: best for slow external RAM */
+    info_if_token(LOG_MODEL_LOAD, "[ISM] Using HyperRAM tensor arena @0x%08X (%u bytes)\r\n",
+                  (unsigned)arenaPtr, arenaSize);
+#else
     uint8_t *arenaPtr  = arm::app::tensorArena;
     uint32_t arenaSize = sizeof(arm::app::tensorArena);
+    const uint8_t arenaMpuAttr = eMPU_ATTR_CACHEABLE_WTRA;   /* SRAM */
     info_if_token(LOG_MODEL_LOAD, "[ISM] Using SRAM tensor arena (%u bytes)\r\n", arenaSize);
+#endif
 
     /* Dump all operator types required by this model for diagnostics */
     if (fbModel && fbModel->operator_codes())
@@ -291,14 +372,14 @@ static void DoLoadModel(void)
     const std::vector<ARM_MPU_Region_t> mpuConfig =
     {
         {
-            // Tensor arena (SRAM)
+            // Tensor arena (SRAM for NPU model, HyperRAM for CPU model)
             ARM_MPU_RBAR(((unsigned int)arenaPtr),             // Base
                          ARM_MPU_SH_NON,    // Non-shareable
                          0,                 // Read-only
                          1,                 // Non-Privileged
                          1),                // eXecute Never enabled
             ARM_MPU_RLAR((((unsigned int)arenaPtr) + arenaSize - 1),  // Limit
-                         eMPU_ATTR_CACHEABLE_WTRA) // Attribute index - Write-Through, Read-allocate
+                         arenaMpuAttr)      // WTRA for SRAM, WBWARA for HyperRAM
         },
 #if defined (__USE_CCAP__)
         {

@@ -170,21 +170,20 @@ bool arm::app::Model::Init(uint8_t* tensorArenaAddr,
         printf_err("tensor allocation failed! (arena provided: %" PRIu32 " bytes)\n",
                    tensorArenaSize);
 
-        /* Try a minimal test: create a fresh allocator with the same arena
-         * to see if it's a memory issue or an op issue */
-        model_load_log("Attempting allocation with a 1KB arena to distinguish memory vs op failure...\n");
-        static uint8_t tinyArena[1024] __attribute__((aligned(16)));
-        auto* tinyAlloc = tflite::MicroAllocator::Create(tinyArena, sizeof(tinyArena));
-        if (tinyAlloc) {
-            auto tinyInterp = std::make_unique<tflite::MicroInterpreter>(
-                this->m_pModel, this->GetOpResolver(), tinyAlloc);
-            TfLiteStatus tinyStatus = tinyInterp->AllocateTensors();
-            if (tinyStatus != kTfLiteOk) {
-                printf_err("Also fails with 1KB arena => likely OP PREPARE failure, not memory\n");
-            } else {
-                printf_err("1KB succeeds but 8MB fails => unexpected\n");
-            }
-        }
+        /* NOTE: do NOT re-test with a tiny arena to "distinguish memory vs op
+         * failure". AllocateTensors() requests scratch/persistent buffers from
+         * the arena during op Prepare, so a 1KB arena ALWAYS fails for memory
+         * reasons too - that test can never tell the two cases apart and only
+         * produced a misleading "OP PREPARE failure" message.
+         *
+         * The dominant real cause here is simply an undersized arena: increase
+         * ACTIVATION_BUF_SZ (and/or CPU_ACTIVATION_BUF_SZ) until it covers the
+         * model's peak activation working set. If the build genuinely cannot
+         * spare that much SRAM, the model must be run split / at a lower input
+         * resolution instead. */
+        printf_err("=> arena is most likely too small for this model's peak "
+                   "activation set. Increase ACTIVATION_BUF_SZ or reduce the "
+                   "model input resolution.\n");
 
         return false;
     }
