@@ -45,12 +45,14 @@ extern uint8_t tensorArena[ACTIVATION_BUF_SZ];
 extern uint8_t cpuTensorArena[];
 
 #if !(defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1))
-/* Optional getter function for the model pointer and its size. */
-namespace mobilenet
+/* Optional getter function for the model pointer and its size.
+ * SINGLE_MODEL_NS resolves to `mobilenet` (NPU/vela) or `baseline_w035`
+ * (CPU int8) depending on MODEL_MODE — see MobileNetModel.hpp. */
+namespace SINGLE_MODEL_NS
 {
-extern uint8_t *GetModelPointer();
+extern const uint8_t *GetModelPointer();
 extern size_t GetModelLen();
-} /* namespace mobilenet */
+} /* namespace SINGLE_MODEL_NS */
 #endif /* !USE_SPLIT_MODEL */
 
 } /* namespace app */
@@ -115,6 +117,38 @@ static std::string BuildTopKResultString(const std::vector<arm::app::Classificat
     return text;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Center-crop ROI helper                                            */
+/* ------------------------------------------------------------------ */
+/* A centered SQUARE ROI scaled to the square model input fixes the
+ * 4:3 (320x240) -> 1:1 (224x224) aspect distortion that plain full-frame
+ * stretching causes. The square crop itself is mandatory; only the zoom
+ * factor below is a tuning knob.
+ *
+ * kCropFraction = fraction of the shorter side kept as the square crop:
+ *   224/256 = 0.875  -> exactly matches PC Resize(256)+CenterCrop(224),
+ *                       but zooms in and may clip an object that already
+ *                       fills the camera frame.
+ *   1.0              -> keeps the full shorter side (only the unavoidable
+ *                       4:3->1:1 horizontal excess is dropped, 0% vertical),
+ *                       never cuts into the object. Best when the camera
+ *                       already frames the object near full-frame.
+ * Start at 1.0; A/B test against 0.875 if accuracy still lags. */
+static constexpr float kCropFraction = 1.0f;
+
+static void SetCenterCropRoi(rectangle_t &r, const image_t &frame)
+{
+    const int shortSide = (frame.w < frame.h) ? frame.w : frame.h;
+    int crop = (int)((float)shortSide * kCropFraction + 0.5f);
+    if (crop < 1)         crop = shortSide;   /* degenerate-size guard */
+    if (crop > shortSide) crop = shortSide;   /* never exceed the frame  */
+
+    r.w = crop;
+    r.h = crop;
+    r.x = (frame.w - crop) / 2;               /* centered */
+    r.y = (frame.h - crop) / 2;
+}
+
 #if !(defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1))
 
 static void DoLoadModel(void)
@@ -136,8 +170,8 @@ static void DoLoadModel(void)
     extern uint32_t SystemCoreClock;
     const uint64_t t0 = pmu_get_systick_Count();
 
-    const uint8_t *modelPtr = arm::app::mobilenet::GetModelPointer();
-    size_t         modelLen = arm::app::mobilenet::GetModelLen();
+    const uint8_t *modelPtr = arm::app::SINGLE_MODEL_NS::GetModelPointer();
+    size_t         modelLen = arm::app::SINGLE_MODEL_NS::GetModelLen();
     const tflite::Model *fbModel = ::tflite::GetModel(modelPtr);
 
     uint8_t *arenaPtr  = arm::app::tensorArena;
@@ -311,38 +345,6 @@ static void DoLoadModel(void)
                   elapsedMs, arenaUsed, arenaSize);
         info_if_token(LOG_MODEL_INIT, "[ISM] Model loaded success\r\n");
     }
-}
-
-/* ------------------------------------------------------------------ */
-/*  Center-crop ROI helper                                            */
-/* ------------------------------------------------------------------ */
-/* A centered SQUARE ROI scaled to the square model input fixes the
- * 4:3 (320x240) -> 1:1 (224x224) aspect distortion that plain full-frame
- * stretching causes. The square crop itself is mandatory; only the zoom
- * factor below is a tuning knob.
- *
- * kCropFraction = fraction of the shorter side kept as the square crop:
- *   224/256 = 0.875  -> exactly matches PC Resize(256)+CenterCrop(224),
- *                       but zooms in and may clip an object that already
- *                       fills the camera frame.
- *   1.0              -> keeps the full shorter side (only the unavoidable
- *                       4:3->1:1 horizontal excess is dropped, 0% vertical),
- *                       never cuts into the object. Best when the camera
- *                       already frames the object near full-frame.
- * Start at 1.0; A/B test against 0.875 if accuracy still lags. */
-static constexpr float kCropFraction = 1.0f;
-
-static void SetCenterCropRoi(rectangle_t &r, const image_t &frame)
-{
-    const int shortSide = (frame.w < frame.h) ? frame.w : frame.h;
-    int crop = (int)((float)shortSide * kCropFraction + 0.5f);
-    if (crop < 1)         crop = shortSide;   /* degenerate-size guard */
-    if (crop > shortSide) crop = shortSide;   /* never exceed the frame  */
-
-    r.w = crop;
-    r.h = crop;
-    r.x = (frame.w - crop) / 2;               /* centered */
-    r.y = (frame.h - crop) / 2;
 }
 
 static void DoInference(void)
@@ -1165,9 +1167,9 @@ static void DoGraphDump(void)
     /* Graph dump reads FlatBuffer directly — does NOT require model.Init() */
 
     /* Print basic model info manually */
-    const uint8_t *modelPtr = arm::app::mobilenet::GetModelPointer();
+    const uint8_t *modelPtr = arm::app::SINGLE_MODEL_NS::GetModelPointer();
     printf("Model Address: %p\r\n", modelPtr);
-    printf("Model Size:    %zu bytes\r\n", arm::app::mobilenet::GetModelLen());
+    printf("Model Size:    %zu bytes\r\n", arm::app::SINGLE_MODEL_NS::GetModelLen());
 
     /* Now do detailed FlatBuffer traversal */
     const tflite::Model *fbModel = ::tflite::GetModel(modelPtr);

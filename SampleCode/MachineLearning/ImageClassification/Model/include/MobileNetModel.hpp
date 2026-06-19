@@ -19,7 +19,39 @@
 
 #include "Model.hpp"
 
-#define USE_SPLIT_MODEL 0
+/* ------------------------------------------------------------------
+ *  Model deployment mode selector
+ * ------------------------------------------------------------------
+ *  Change MODEL_MODE below to pick which model(s) get loaded:
+ *
+ *    MODEL_MODE_SINGLE_NPU : mbn-v2_w035_int8_vela.tflite
+ *                            full model, runs on the Ethos-U NPU
+ *    MODEL_MODE_SINGLE_CPU : mbn-v2_w035_int8.tflite
+ *                            full model, runs on the Cortex-M CPU
+ *    MODEL_MODE_SPLIT      : mbn-v2_w035_feature_extractor_int8_vela.tflite (NPU)
+ *                          + mbn-v2_w035_classifier_int8.tflite (CPU, ZO-trainable)
+ * ------------------------------------------------------------------ */
+#define MODEL_MODE_SINGLE_NPU   0
+#define MODEL_MODE_SINGLE_CPU   1
+#define MODEL_MODE_SPLIT        2
+
+#ifndef MODEL_MODE
+#define MODEL_MODE              MODEL_MODE_SPLIT
+#endif
+
+/* Derived split-model switch, kept for backward compatibility with the
+ * `defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1)` checks used across
+ * the codebase. Evaluates to 1 only in split mode, 0 otherwise. */
+#define USE_SPLIT_MODEL         ((MODEL_MODE) == MODEL_MODE_SPLIT)
+
+/* Source namespace of the active single (monolithic) model. Only meaningful
+ * when !USE_SPLIT_MODEL. The NPU (vela) build lives in namespace `mobilenet`,
+ * the plain CPU int8 build in namespace `baseline_w035`. */
+#if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU
+#define SINGLE_MODEL_NS         baseline_w035
+#else
+#define SINGLE_MODEL_NS         mobilenet
+#endif
 
 namespace arm
 {

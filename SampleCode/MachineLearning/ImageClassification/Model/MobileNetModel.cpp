@@ -125,22 +125,22 @@ namespace arm
 {
 namespace app
 {
-namespace mobilenet
+namespace SINGLE_MODEL_NS
 {
 extern const uint8_t *GetModelPointer();
 extern size_t GetModelLen();
 }
 }
-} /* namespace mobilenet */
+} /* namespace SINGLE_MODEL_NS */
 
 const uint8_t *arm::app::MobileNetModel::ModelPointer()
 {
-    return arm::app::mobilenet::GetModelPointer();
+    return arm::app::SINGLE_MODEL_NS::GetModelPointer();
 }
 
 size_t arm::app::MobileNetModel::ModelSize()
 {
-    return arm::app::mobilenet::GetModelLen();
+    return arm::app::SINGLE_MODEL_NS::GetModelLen();
 }
 #else
 namespace arm
