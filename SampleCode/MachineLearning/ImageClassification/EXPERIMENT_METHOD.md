@@ -263,9 +263,7 @@ enum LogToken : uint16_t {
                │                                         │
                │   SRAM (832 KB)                         │
                │     └─ NPU Feature Extractor arena      │
-               │                                         │
-               │   HyperRAM (3–8 MB)                     │
-               │     ├─ CPU Classifier arena              │
+               │     ├─ CPU Classifier arena             │
                │     └─ ZO scratch buffers               │
                │                                         │
                │   Flash (APROM tail 4 pages)            │
