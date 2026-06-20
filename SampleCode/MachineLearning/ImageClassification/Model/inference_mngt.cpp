@@ -1396,6 +1396,18 @@ ISM_State_t ISM_GetState(void)
     return g_currentState;
 }
 
+bool ISM_RequestCapturesFrame(void)
+{
+#if defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1)
+    /* Both classify (this_is?) and one-step ZO training (tra=<label>) grab a
+     * fresh camera frame, so both want the LCD blanked first. */
+    return (g_requestState == ISM_SPLIT_INFERENCE) ||
+           (g_requestState == ISM_ZO_TRAIN);
+#else
+    return (g_requestState == ISM_INFERENCE);
+#endif
+}
+
 void ISM_Process(void)
 {
     /* Check if there is a new request */

@@ -68,6 +68,10 @@ int Display_PutText(
 
 void Display_ClearRect(uint32_t u32Color, const S_DISP_RECT *psRect);
 void Display_ClearLCD(uint32_t u32Color);
+/* Turn the LCD backlight on/off (digital, full brightness or off).
+ * Used to blank the panel before capturing an inference frame so its light
+ * does not reflect off the subject back into the camera. */
+void Display_SetBacklight(bool bOn);
 uint32_t Disaplay_GetLCDWidth(void);
 uint32_t Disaplay_GetLCDHeight(void);
 

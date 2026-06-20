@@ -36,7 +36,7 @@
 #define MODEL_MODE_SPLIT        2
 
 #ifndef MODEL_MODE
-#define MODEL_MODE              MODEL_MODE_SPLIT
+#define MODEL_MODE              MODEL_MODE_SINGLE_NPU
 #endif
 
 /* Derived split-model switch, kept for backward compatibility with the

@@ -30,6 +30,12 @@ void ISM_Process(void);
 /* Get current state */
 ISM_State_t ISM_GetState(void);
 
+/* True if a pending request will capture a fresh camera frame, i.e. a
+ * `this_is?` classification or a `tra=<label>` ZO training step (requested but
+ * not yet run by ISM_Process). Lets the main loop blank the LCD before that
+ * frame is captured, in both monolithic and split-model builds. */
+bool ISM_RequestCapturesFrame(void);
+
 #if defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1)
 /* Persist current trained classifier FC parameters to APROM flash. */
 int ISM_ZO_SaveToFlash(void);

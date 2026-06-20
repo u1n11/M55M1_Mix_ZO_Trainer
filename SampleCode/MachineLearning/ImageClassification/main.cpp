@@ -371,7 +371,40 @@ int main()
         /* ---------------------------------------------------------- */
         /*  5. Process Inference State Machine (ISM)                  */
         /* ---------------------------------------------------------- */
+#if defined (__USE_DISPLAY__) && defined (__USE_CCAP__)
+        /* Before a `this_is?` classification or a `tra=<label>` training step,
+         * blank the LCD so its backlight cannot reflect off the subject back
+         * into the camera, then grab fresh frames in the dark before the model
+         * sees them. The backlight is restored afterwards to show the result. */
+        const bool bBlankForFrame = ISM_RequestCapturesFrame();
+        if (bBlankForFrame)
+        {
+            /* Number of frames to throw away after the screen goes dark so the
+             * sensor's auto-exposure adapts to the darker scene first. */
+            const int kDarkSettleFrames = 3;
+
+            /* Finish the capture already in flight from step 3 above. */
+            ImageSensor_WaitCaptureDone();
+
+            Display_SetBacklight(false);
+            Display_Delay(30);              /* let the panel actually go dark */
+
+            for (int i = 0; i < kDarkSettleFrames; i++)
+            {
+                ImageSensor_TriggerCapture((uint32_t)frameBuffer.data);
+                ImageSensor_WaitCaptureDone();
+            }
+        }
+#endif
+
         ISM_Process();
+
+#if defined (__USE_DISPLAY__) && defined (__USE_CCAP__)
+        if (bBlankForFrame)
+        {
+            Display_SetBacklight(true);     /* restore backlight to show result */
+        }
+#endif
 
         /* ---------------------------------------------------------- */
         /*  6. Wait for camera capture to complete (skip if frozen)   */

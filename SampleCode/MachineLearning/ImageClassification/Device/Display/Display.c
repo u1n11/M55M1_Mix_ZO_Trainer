@@ -268,6 +268,20 @@ void Display_ClearLCD(uint32_t u32Color)
     s_psLCD->m_pfnSentPixel(NULL, w, h, u32Color, h * w * sizeof(uint16_t), 1);
 }
 
+void Display_SetBacklight(bool bOn)
+{
+    /* Backlight is a plain GPIO output (PG5 on EBI panel, PB5 on SPI panel):
+     * 1 = on (full brightness), 0 = off. No PWM dimming on this board. */
+    if (bOn)
+    {
+        SET_BACKLIGHT_ON;
+    }
+    else
+    {
+        SET_BACKLIGHT_OFF;
+    }
+}
+
 uint32_t Disaplay_GetLCDWidth(void)
 {
     return s_psLCD->m_u16Width;
