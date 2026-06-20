@@ -22,18 +22,32 @@
 /* ------------------------------------------------------------------
  *  Model deployment mode selector
  * ------------------------------------------------------------------
- *  Change MODEL_MODE below to pick which model(s) get loaded:
+ *  Change MODEL_MODE below to pick which model(s) get loaded and where
+ *  the tensor arena(s) live:
  *
- *    MODEL_MODE_SINGLE_NPU : mbn-v2_w035_int8_vela.tflite
- *                            full model, runs on the Ethos-U NPU
- *    MODEL_MODE_SINGLE_CPU : mbn-v2_w035_int8.tflite
- *                            full model, runs on the Cortex-M CPU
- *    MODEL_MODE_SPLIT      : mbn-v2_w035_feature_extractor_int8_vela.tflite (NPU)
- *                          + mbn-v2_w035_classifier_int8.tflite (CPU, ZO-trainable)
+ *    MODEL_MODE_SINGLE_NPU          : mbn-v2_w035_int8_vela.tflite
+ *                                     full model on Ethos-U NPU, SRAM arena
+ *    MODEL_MODE_SINGLE_CPU          : mbn-v2_w035_int8.tflite
+ *                                     full model on Cortex-M CPU, HyperRAM arena
+ *    MODEL_MODE_SPLIT              : mbn-v2_w035_feature_extractor_int8_vela.tflite (NPU)
+ *                                  + mbn-v2_w035_classifier_int8.tflite (CPU, ZO-trainable)
+ *                                     both arenas in SRAM
+ *    MODEL_MODE_SINGLE_NPU_HYPERRAM: same NPU model as SINGLE_NPU, but the
+ *                                     tensor arena is placed in external
+ *                                     HyperRAM instead of SRAM.
+ *    MODEL_MODE_SPLIT_HYPERRAM     : same split NPU+CPU model as SPLIT, but
+ *                                     both tensor arenas live in HyperRAM.
+ *
+ *  NOTE on the *_HYPERRAM observation modes: the Ethos-U NPU is a separate
+ *  bus master and may NOT be able to reach the SPIM-mapped HyperRAM region.
+ *  These two modes exist specifically to build and observe/measure that
+ *  behaviour; they are not guaranteed to run NPU inference successfully.
  * ------------------------------------------------------------------ */
-#define MODEL_MODE_SINGLE_NPU   0
-#define MODEL_MODE_SINGLE_CPU   1
-#define MODEL_MODE_SPLIT        2
+#define MODEL_MODE_SINGLE_NPU            0
+#define MODEL_MODE_SINGLE_CPU            1
+#define MODEL_MODE_SPLIT                 2
+#define MODEL_MODE_SINGLE_NPU_HYPERRAM   3
+#define MODEL_MODE_SPLIT_HYPERRAM        4
 
 #ifndef MODEL_MODE
 #define MODEL_MODE              MODEL_MODE_SINGLE_NPU
@@ -41,17 +55,28 @@
 
 /* Derived split-model switch, kept for backward compatibility with the
  * `defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1)` checks used across
- * the codebase. Evaluates to 1 only in split mode, 0 otherwise. */
-#define USE_SPLIT_MODEL         ((MODEL_MODE) == MODEL_MODE_SPLIT)
+ * the codebase. Evaluates to 1 in either split mode (SRAM or HyperRAM). */
+#define USE_SPLIT_MODEL         (((MODEL_MODE) == MODEL_MODE_SPLIT) || \
+                                 ((MODEL_MODE) == MODEL_MODE_SPLIT_HYPERRAM))
 
 /* Source namespace of the active single (monolithic) model. Only meaningful
  * when !USE_SPLIT_MODEL. The NPU (vela) build lives in namespace `mobilenet`,
- * the plain CPU int8 build in namespace `baseline_w035`. */
+ * the plain CPU int8 build in namespace `baseline_w035`. Both NPU single
+ * modes (SRAM / HyperRAM arena) use the vela `mobilenet` build. */
 #if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU
 #define SINGLE_MODEL_NS         baseline_w035
 #else
 #define SINGLE_MODEL_NS         mobilenet
 #endif
+
+/* Derived "tensor arena lives in external HyperRAM" switches, used by
+ * inference_mngt.cpp to decide arena placement and MPU cache attributes.
+ *   SINGLE_MODEL_USE_HYPERRAM : single (monolithic) model arena in HyperRAM
+ *                               (CPU model, or the NPU HyperRAM observation mode)
+ *   SPLIT_MODEL_USE_HYPERRAM  : both split arenas in HyperRAM */
+#define SINGLE_MODEL_USE_HYPERRAM  (((MODEL_MODE) == MODEL_MODE_SINGLE_CPU) || \
+                                    ((MODEL_MODE) == MODEL_MODE_SINGLE_NPU_HYPERRAM))
+#define SPLIT_MODEL_USE_HYPERRAM   ((MODEL_MODE) == MODEL_MODE_SPLIT_HYPERRAM)
 
 namespace arm
 {

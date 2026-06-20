@@ -19,9 +19,10 @@
 #include "NuMicro.h"
 #include "log_macros.h"
 
-#if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU
-/* The full CPU (non-NPU) model's activation arena exceeds on-chip SRAM, so it
- * is placed in external HyperRAM (memory-mapped at 0x82000000 via SPIM DMM). */
+#if SINGLE_MODEL_USE_HYPERRAM || SPLIT_MODEL_USE_HYPERRAM
+/* Some modes place the tensor arena(s) in external HyperRAM (memory-mapped at
+ * 0x82000000 via SPIM DMM): the CPU single model (does not fit on-chip SRAM),
+ * plus the NPU/split HyperRAM observation modes. */
 #include "hyperflash_code.h"   /* SPIM_HyperRAM_Init() */
 #endif
 
@@ -155,18 +156,17 @@ static void SetCenterCropRoi(rectangle_t &r, const image_t &frame)
     r.y = (frame.h - crop) / 2;
 }
 
-#if !(defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1))
-
-#if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU
 /* ------------------------------------------------------------------ */
-/*  HyperRAM tensor arena (CPU single model)                          */
+/*  HyperRAM tensor arena helper (shared by single + split paths)     */
 /* ------------------------------------------------------------------ */
+#if SINGLE_MODEL_USE_HYPERRAM || SPLIT_MODEL_USE_HYPERRAM
 /* The full int8 MobileNetV2 run entirely on the CPU needs >1.1 MB of
  * activation arena, which does not fit in the 1 MB NPU-side SRAM. The
  * board carries an 8 MB HyperRAM that the SPIM exposes as normal,
  * memory-mapped RAM at 0x82000000 once put in Direct-Map mode, so the
- * CPU arena lives there instead. (The NPU cannot reach HyperRAM, hence
- * this path is CPU-only; the NPU build keeps the SRAM arena.) */
+ * arena can live there instead. The CPU single model needs this; the NPU
+ * and split HyperRAM observation modes opt in to it deliberately to measure
+ * arena-location effects (note the NPU may not be able to reach HyperRAM). */
 #define HYPERRAM_ARENA_ADDR   (0x82000000UL)   /* SPIM0 DMM base (SPIM_HYPER_DMM0_SADDR) */
 #define HYPERRAM_ARENA_SZ     (0x00200000UL)   /* 2 MB — ample headroom over the ~1.2 MB peak */
 
@@ -214,7 +214,9 @@ static bool EnsureHyperRamArena(void)
                   (unsigned)HYPERRAM_ARENA_ADDR, (unsigned)HYPERRAM_ARENA_SZ);
     return true;
 }
-#endif /* MODEL_MODE_SINGLE_CPU */
+#endif /* SINGLE_MODEL_USE_HYPERRAM || SPLIT_MODEL_USE_HYPERRAM */
+
+#if !(defined(USE_SPLIT_MODEL) && (USE_SPLIT_MODEL == 1))
 
 static void DoLoadModel(void)
 {
@@ -239,11 +241,12 @@ static void DoLoadModel(void)
     size_t         modelLen = arm::app::SINGLE_MODEL_NS::GetModelLen();
     const tflite::Model *fbModel = ::tflite::GetModel(modelPtr);
 
-#if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU
-    /* CPU model: arena lives in external HyperRAM (does not fit on-chip SRAM). */
+#if SINGLE_MODEL_USE_HYPERRAM
+    /* Arena lives in external HyperRAM (CPU model does not fit on-chip SRAM;
+     * the NPU HyperRAM mode places it there deliberately for observation). */
     if (!EnsureHyperRamArena())
     {
-        printf_err("[ISM] HyperRAM unavailable; cannot load CPU model\r\n");
+        printf_err("[ISM] HyperRAM unavailable; cannot load model\r\n");
         g_modelLoadFailed = true;
         return;
     }
@@ -786,6 +789,33 @@ static bool TryLoadZOTrainerSnapshotFromFlash(void)
 
 static void DoZOInit(void);
 
+/* ------------------------------------------------------------------ */
+/*  Split-model tensor arena placement                                */
+/* ------------------------------------------------------------------ */
+/* In SPLIT_HYPERRAM mode both arenas live back-to-back in the 2 MB HyperRAM
+ * region (extractor first, classifier right after); otherwise the extractor
+ * uses on-chip SRAM tensorArena and the classifier uses cpuTensorArena.
+ * Defined as macros so DoLoadSplitModel() and DoZOInit() can never disagree
+ * on where the classifier arena is. */
+#if SPLIT_MODEL_USE_HYPERRAM
+#if (ACTIVATION_BUF_SZ + CPU_ACTIVATION_BUF_SZ) > HYPERRAM_ARENA_SZ
+#error "Split HyperRAM arenas (extractor + classifier) exceed the HyperRAM region"
+#endif
+#define SPLIT_EXT_ARENA_PTR   ((uint8_t *)HYPERRAM_ARENA_ADDR)
+#define SPLIT_EXT_ARENA_SZ    ((uint32_t)ACTIVATION_BUF_SZ)
+#define SPLIT_CLS_ARENA_PTR   ((uint8_t *)HYPERRAM_ARENA_ADDR + ACTIVATION_BUF_SZ)
+#define SPLIT_CLS_ARENA_SZ    ((uint32_t)CPU_ACTIVATION_BUF_SZ)
+#define SPLIT_ARENA_MPU_ATTR  eMPU_ATTR_CACHEABLE_WBWARA  /* write-back: best for slow external RAM */
+#define SPLIT_ARENA_LOC_STR   "HyperRAM"
+#else
+#define SPLIT_EXT_ARENA_PTR   arm::app::tensorArena
+#define SPLIT_EXT_ARENA_SZ    ((uint32_t)sizeof(arm::app::tensorArena))
+#define SPLIT_CLS_ARENA_PTR   arm::app::cpuTensorArena
+#define SPLIT_CLS_ARENA_SZ    ((uint32_t)CPU_ACTIVATION_BUF_SZ)
+#define SPLIT_ARENA_MPU_ATTR  eMPU_ATTR_CACHEABLE_WTRA    /* SRAM */
+#define SPLIT_ARENA_LOC_STR   "SRAM"
+#endif
+
 static void DoLoadSplitModel(void)
 {
     if (splitModelLoaded)
@@ -805,14 +835,24 @@ static void DoLoadSplitModel(void)
     extern uint32_t SystemCoreClock;
     const uint64_t t0 = pmu_get_systick_Count();
 
-    /* ---- Feature Extractor (NPU → SRAM arena) ---- */
+#if SPLIT_MODEL_USE_HYPERRAM
+    /* Both split arenas live in external HyperRAM (observation mode). */
+    if (!EnsureHyperRamArena())
+    {
+        printf_err("[ISM] HyperRAM unavailable; cannot load split model\r\n");
+        g_modelLoadFailed = true;
+        return;
+    }
+#endif
+
+    /* ---- Feature Extractor (NPU) ---- */
     const uint8_t *extPtr  = arm::app::feature_extractor_npu::GetModelPointer();
     size_t         extLen  = arm::app::feature_extractor_npu::GetModelLen();
-    uint8_t       *extArena     = arm::app::tensorArena;
-    uint32_t       extArenaSize = sizeof(arm::app::tensorArena);
+    uint8_t       *extArena     = SPLIT_EXT_ARENA_PTR;
+    uint32_t       extArenaSize = SPLIT_EXT_ARENA_SZ;
 
-    info_if_token(LOG_MODEL_LOAD, "[ISM] Feature extractor: %zu bytes, SRAM arena %u bytes\r\n",
-         extLen, extArenaSize);
+    info_if_token(LOG_MODEL_LOAD, "[ISM] Feature extractor: %zu bytes, %s arena %u bytes at 0x%p\r\n",
+         extLen, SPLIT_ARENA_LOC_STR, extArenaSize, extArena);
 
     if (!extractorModel.Init(extArena, extArenaSize, extPtr, extLen))
     {
@@ -821,14 +861,14 @@ static void DoLoadSplitModel(void)
         return;
     }
 
-    /* ---- Classifier (CPU → SRAM arena) ---- */
+    /* ---- Classifier (CPU) ---- */
     const uint8_t *clsPtr  = arm::app::classifier_cpu_int8::GetModelPointer();
     size_t         clsLen  = arm::app::classifier_cpu_int8::GetModelLen();
-    uint8_t       *clsArena     = arm::app::cpuTensorArena;
-    uint32_t       clsArenaSize = CPU_ACTIVATION_BUF_SZ;
+    uint8_t       *clsArena     = SPLIT_CLS_ARENA_PTR;
+    uint32_t       clsArenaSize = SPLIT_CLS_ARENA_SZ;
 
-    info_if_token(LOG_MODEL_LOAD, "[ISM] Classifier: %zu bytes, SRAM arena %u bytes at 0x%p\r\n",
-         clsLen, clsArenaSize, clsArena);
+    info_if_token(LOG_MODEL_LOAD, "[ISM] Classifier: %zu bytes, %s arena %u bytes at 0x%p\r\n",
+         clsLen, SPLIT_ARENA_LOC_STR, clsArenaSize, clsArena);
 
     if (!classifierModel.Init(clsArena, clsArenaSize, clsPtr, clsLen))
     {
@@ -852,15 +892,25 @@ static void DoLoadSplitModel(void)
         return;
     }
 
-    /* ---- MPU: mark tensor arenas as write-through cacheable ---- */
+    /* ---- MPU: mark tensor arena(s) cacheable ----
+     * SRAM mode covers only the extractor SRAM arena (classifier cpuTensorArena
+     * keeps default attrs, as before). HyperRAM mode covers both back-to-back
+     * arenas in one region with write-back attributes for the slow external RAM. */
+#if SPLIT_MODEL_USE_HYPERRAM
+    const unsigned int mpuArenaBase = (unsigned int)extArena;
+    const unsigned int mpuArenaSize = (unsigned int)extArenaSize + (unsigned int)clsArenaSize;
+#else
+    const unsigned int mpuArenaBase = (unsigned int)extArena;
+    const unsigned int mpuArenaSize = (unsigned int)extArenaSize;
+#endif
     const std::vector<ARM_MPU_Region_t> mpuConfig =
     {
         {
-            /* SRAM tensor arena (extractor / NPU) */
-            ARM_MPU_RBAR(((unsigned int)extArena),
+            /* Tensor arena (extractor / NPU; +classifier in HyperRAM mode) */
+            ARM_MPU_RBAR(mpuArenaBase,
                          ARM_MPU_SH_NON, 0, 1, 1),
-            ARM_MPU_RLAR((((unsigned int)extArena) + extArenaSize - 1),
-                         eMPU_ATTR_CACHEABLE_WTRA)
+            ARM_MPU_RLAR((mpuArenaBase + mpuArenaSize - 1),
+                         SPLIT_ARENA_MPU_ATTR)
         },
 #if defined (__USE_CCAP__)
         {
@@ -1042,8 +1092,8 @@ static void DoZOInit(void)
      * On zo_init we reload using preserveAllTensors=true. */
     const uint8_t *clsPtr      = arm::app::classifier_cpu_int8::GetModelPointer();
     size_t         clsLen      = arm::app::classifier_cpu_int8::GetModelLen();
-    uint8_t       *clsArena    = arm::app::cpuTensorArena;
-    uint32_t       clsArenaSize = CPU_ACTIVATION_BUF_SZ;
+    uint8_t       *clsArena    = SPLIT_CLS_ARENA_PTR;
+    uint32_t       clsArenaSize = SPLIT_CLS_ARENA_SZ;
 
     info_if_token(LOG_ZO_TRAINING, "[ZO] Re-initialising classifier with preserve_all_tensors=true...\r\n");
 
