@@ -168,7 +168,14 @@ static void SetCenterCropRoi(rectangle_t &r, const image_t &frame)
  * and split HyperRAM observation modes opt in to it deliberately to measure
  * arena-location effects (note the NPU may not be able to reach HyperRAM). */
 #define HYPERRAM_ARENA_ADDR   (0x82000000UL)   /* SPIM0 DMM base (SPIM_HYPER_DMM0_SADDR) */
-#define HYPERRAM_ARENA_SZ     (0x00200000UL)   /* 2 MB — ample headroom over the ~1.2 MB peak */
+#if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU_FP32
+/* fp32 (float32) single CPU model: float activations are ~4x the int8
+ * footprint, so the int8 ~1.2 MB peak grows to ~4.5 MB. Reserve 6 MB of the
+ * 8 MB HyperRAM to give the greedy planner ample headroom. */
+#define HYPERRAM_ARENA_SZ     (0x00800000UL)   /* 6 MB */
+#else
+#define HYPERRAM_ARENA_SZ     (0x00200000UL)   /* 2 MB — ample headroom over the ~1.2 MB int8 peak */
+#endif
 
 static bool g_hyperRamReady = false;
 

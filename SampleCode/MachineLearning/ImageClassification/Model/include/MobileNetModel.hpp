@@ -28,7 +28,12 @@
  *    MODEL_MODE_SINGLE_NPU          : mbn-v2_w035_int8_vela.tflite
  *                                     full model on Ethos-U NPU, SRAM arena
  *    MODEL_MODE_SINGLE_CPU          : mbn-v2_w035_int8.tflite
- *                                     full model on Cortex-M CPU, HyperRAM arena
+ *                                     full int8 model on Cortex-M CPU, HyperRAM arena
+ *    MODEL_MODE_SINGLE_CPU_FP32     : mbn-v2_w035.tflite
+ *                                     full fp32 (float32) model on Cortex-M CPU,
+ *                                     no NPU. Float activations are ~4x the int8
+ *                                     footprint, so the tensor arena is placed in
+ *                                     external HyperRAM (see HYPERRAM_ARENA_SZ).
  *    MODEL_MODE_SPLIT              : mbn-v2_w035_feature_extractor_int8_vela.tflite (NPU)
  *                                  + mbn-v2_w035_classifier_int8.tflite (CPU, ZO-trainable)
  *                                     both arenas in SRAM
@@ -48,6 +53,7 @@
 #define MODEL_MODE_SPLIT                 2
 #define MODEL_MODE_SINGLE_NPU_HYPERRAM   3
 #define MODEL_MODE_SPLIT_HYPERRAM        4
+#define MODEL_MODE_SINGLE_CPU_FP32       5
 
 #ifndef MODEL_MODE
 #define MODEL_MODE              MODEL_MODE_SPLIT
@@ -61,10 +67,13 @@
 
 /* Source namespace of the active single (monolithic) model. Only meaningful
  * when !USE_SPLIT_MODEL. The NPU (vela) build lives in namespace `mobilenet`,
- * the plain CPU int8 build in namespace `baseline_w035`. Both NPU single
- * modes (SRAM / HyperRAM arena) use the vela `mobilenet` build. */
+ * the plain CPU int8 build in namespace `baseline_w035`, and the CPU-only fp32
+ * build in namespace `cpu_only_fp32`. Both NPU single modes (SRAM / HyperRAM
+ * arena) use the vela `mobilenet` build. */
 #if (MODEL_MODE) == MODEL_MODE_SINGLE_CPU
 #define SINGLE_MODEL_NS         baseline_w035
+#elif (MODEL_MODE) == MODEL_MODE_SINGLE_CPU_FP32
+#define SINGLE_MODEL_NS         cpu_only_fp32
 #else
 #define SINGLE_MODEL_NS         mobilenet
 #endif
@@ -75,6 +84,7 @@
  *                               (CPU model, or the NPU HyperRAM observation mode)
  *   SPLIT_MODEL_USE_HYPERRAM  : both split arenas in HyperRAM */
 #define SINGLE_MODEL_USE_HYPERRAM  (((MODEL_MODE) == MODEL_MODE_SINGLE_CPU) || \
+                                    ((MODEL_MODE) == MODEL_MODE_SINGLE_CPU_FP32) || \
                                     ((MODEL_MODE) == MODEL_MODE_SINGLE_NPU_HYPERRAM))
 #define SPLIT_MODEL_USE_HYPERRAM   ((MODEL_MODE) == MODEL_MODE_SPLIT_HYPERRAM)
 

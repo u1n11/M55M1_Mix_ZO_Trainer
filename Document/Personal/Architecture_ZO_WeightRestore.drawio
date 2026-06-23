@@ -1,0 +1,117 @@
+<mxfile host="Electron" agent="Claude Code">
+  <diagram id="zo-weight-restore" name="ZO權重復原流程圖">
+    <mxGraphModel dx="1664" dy="989" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1180" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="f_start" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;arcSize=40;fontFamily=Times New Roman;" value="開機 / load_model&#xa;(分類器以 preserveAllTensors=true 載入)" vertex="1">
+          <mxGeometry height="56" width="320" x="120" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="f_init" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=left;spacingLeft=8;fontFamily=Times New Roman;" value="zo_init → ZOTrainer::Init()&#xa;[第1層 重導向備份]&#xa;① 找最後一個 FULLY_CONNECTED 層&#xa;② Flash const 權重 → memcpy → mutable + original 兩份&#xa;③ 重導向解譯器 tensor 指標 → m_mutableWeights" vertex="1">
+          <mxGeometry height="104" width="360" x="100" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="f_dec_snap" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontFamily=Times New Roman;" value="Flash 尾端 4 頁&lt;br&gt;有有效快照?&lt;br&gt;(校驗 OK)" vertex="1">
+          <mxGeometry height="110" width="240" x="160" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="hgmKMK9PcgWejGqlR6TL-2" edge="1" parent="1" source="f_load" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;curved=0;fontFamily=Times New Roman;" target="f_loop_band">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="630" y="530" />
+              <mxPoint x="280" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f_load" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=left;spacingLeft=8;fontFamily=Times New Roman;" value="LoadFromSnapshot()&lt;br&gt;[第4層 持久化復原]&lt;br&gt;讀取儲存的權重 → 覆寫 mutable + original 兩份" vertex="1">
+          <mxGeometry height="110" width="320" x="470" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="f_orig" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;fontFamily=Times New Roman;" value="使用 Flash const 原始權重&#xa;(original = 出廠值)" vertex="1">
+          <mxGeometry height="50" width="200" x="180" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="f_loop_band" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef7ff;strokeColor=#9fb8d9;dashed=1;fontFamily=Times New Roman;" value="" vertex="1">
+          <mxGeometry height="330" width="380" x="90" y="560" as="geometry" />
+        </mxCell>
+        <mxCell id="f_loop_lbl" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=11;fontFamily=Times New Roman;" value="單步訓練迴圈 (每個樣本 tra=&lt;label&gt;)&lt;/label&gt;" vertex="1">
+          <mxGeometry height="20" width="360" x="100" y="566" as="geometry" />
+        </mxCell>
+        <mxCell id="f_cache" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontFamily=Times New Roman;" value="CacheFeature()&#xa;跑一次 NPU+CPU 推論, 快取 FC 輸入特徵 a" vertex="1">
+          <mxGeometry height="48" width="340" x="110" y="596" as="geometry" />
+        </mxCell>
+        <mxCell id="f_snap" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontFamily=Times New Roman;" value="[第2層 單步樞紐]&#xa;m_stepSnapshot ← memcpy(m_mutableWeights)" vertex="1">
+          <mxGeometry height="44" width="340" x="110" y="658" as="geometry" />
+        </mxCell>
+        <mxCell id="f_np" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=6;fontFamily=Times New Roman;" value="NP 節點擾動 (預設)&#xa;擾動 logit z, 權重不動&#xa;snapshot 僅作 Δparams 量測對照" vertex="1">
+          <mxGeometry height="76" width="165" x="110" y="740" as="geometry" />
+        </mxCell>
+        <mxCell id="f_wp" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=6;fontFamily=Times New Roman;" value="WP 權重擾動&#xa;每次從 snapshot ±1 LSB 改寫&#xa;Q 次後 mutable ← snapshot&#xa;還原樞紐再套用平均梯度" vertex="1">
+          <mxGeometry height="76" width="165" x="285" y="740" as="geometry" />
+        </mxCell>
+        <mxCell id="f_update" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontFamily=Times New Roman;" value="套用更新: 只改 FC 層 INT8 權重 / INT32 偏置 (clamp 至 [-128,127])" vertex="1">
+          <mxGeometry height="40" width="340" x="110" y="840" as="geometry" />
+        </mxCell>
+        <mxCell id="f_dec_end" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontFamily=Times New Roman;" value="訓練後動作?" vertex="1">
+          <mxGeometry height="90" width="160" x="200" y="900" as="geometry" />
+        </mxCell>
+        <mxCell id="f_save" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontFamily=Times New Roman;" value="zo_save&amp;nbsp;&lt;br&gt;&lt;div&gt;儲存權重至flash內&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="250" x="60" y="1030" as="geometry" />
+        </mxCell>
+        <mxCell id="f_reset" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontFamily=Times New Roman;" value="zo_reset → Reset()&#xa;[第3層 全量復原]&#xa;mutable ← original (退回基準)&#xa;清零 stepCount/EMA + 抹除 Flash 快照" vertex="1">
+          <mxGeometry height="80" width="280" x="350" y="1020" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="f_start" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontFamily=Times New Roman;" target="f_init">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="f_init" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontFamily=Times New Roman;" target="f_dec_snap">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="f_dec_snap" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;labelBackgroundColor=#ffffff;fontFamily=Times New Roman;" target="f_load" value="是">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="f_dec_snap" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=11;labelBackgroundColor=#ffffff;fontFamily=Times New Roman;" target="f_orig" value="否">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="f_orig" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="280" y="560" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="f_cache" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontFamily=Times New Roman;" target="f_snap">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="f_snap" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=10;labelBackgroundColor=#ffffff;fontFamily=Times New Roman;" target="f_np" value="zo_method 擇一">
+          <mxGeometry relative="1" x="-0.6972" y="9" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7b" edge="1" parent="1" source="f_snap" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontFamily=Times New Roman;" target="f_wp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="f_np" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontFamily=Times New Roman;" target="f_update">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8b" edge="1" parent="1" source="f_wp" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontFamily=Times New Roman;" target="f_update">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="f_update" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontFamily=Times New Roman;" target="f_dec_end">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="f_dec_end" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Times New Roman;" target="f_loop_band" value="下一個樣本 (回迴圈)">
+          <mxGeometry relative="1" x="-0.6532" y="15" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="580" y="945" />
+              <mxPoint x="580" y="540" />
+              <mxPoint x="280" y="540" />
+            </Array>
+            <mxPoint x="450" y="596" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="f_dec_end" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=10;labelBackgroundColor=#ffffff;fontFamily=Times New Roman;" target="f_save" value="持久化">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="f_dec_end" style="endArrow=classic;html=1;rounded=1;edgeStyle=orthogonalEdgeStyle;fontSize=10;labelBackgroundColor=#ffffff;fontFamily=Times New Roman;" target="f_reset" value="放棄/復原">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

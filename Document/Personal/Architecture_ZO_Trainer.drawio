@@ -1,0 +1,82 @@
+<mxfile host="Electron" agent="Claude Code">
+  <diagram id="m55m1-zo-arch-simple" name="模塊與硬體堆疊圖">
+    <mxGraphModel dx="1078" dy="593" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1080" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="band_host" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#b3b3b3;opacity=50;fontFamily=Times New Roman;fontStyle=0" value="" vertex="1">
+          <mxGeometry height="60" width="1000" x="40" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_host" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontStyle=0;fontSize=12;fontFamily=Times New Roman;" value="外部&lt;div&gt;(Host PC/ Monitor)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="140" x="48" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="host" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="主機 PC — 透過 UART 下命令並收結果：load_model · this_is? · tra=&lt;label&gt; · zo_init / zo_save …&lt;/label&gt;" vertex="1">
+          <mxGeometry height="34" width="520" x="200" y="83" as="geometry" />
+        </mxCell>
+        <mxCell id="band_app" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ebf2fb;strokeColor=#9fb8d9;opacity=40;fontFamily=Times New Roman;fontStyle=0" value="" vertex="1">
+          <mxGeometry height="80" width="1000" x="40" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_app" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontStyle=0;fontSize=12;fontFamily=Times New Roman;" value="應用層&#xa;(韌體)" vertex="1">
+          <mxGeometry height="80" width="140" x="48" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="app_main" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="main.cpp 主迴圈&#xa;相機擷取 → 顯示 → 收命令 → 跑推論/訓練" vertex="1">
+          <mxGeometry height="40" width="400" x="200" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="app_ism" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="狀態機 ISM (inference_mngt)&#xa;載入模型 · 推論 · ZO 訓練 · Flash 快照" vertex="1">
+          <mxGeometry height="40" width="400" x="620" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="band_ml" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e9f4e6;strokeColor=#a6cc9a;opacity=45;fontFamily=Times New Roman;fontStyle=0" value="" vertex="1">
+          <mxGeometry height="90" width="1000" x="40" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_ml" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontStyle=0;fontSize=12;fontFamily=Times New Roman;" value="機器學習&#xa;核心" vertex="1">
+          <mxGeometry height="90" width="140" x="48" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="ml_proc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="影像前/後處理&#xa;imlib 縮放 +&#xa;正規化 / softmax" vertex="1">
+          <mxGeometry height="44" width="265" x="200" y="265" as="geometry" />
+        </mxCell>
+        <mxCell id="ml_infer" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="分類推論&lt;br&gt;特徵提取器 (NPU) → 分類器 (CPU)" vertex="1">
+          <mxGeometry height="44" width="265" x="480" y="265" as="geometry" />
+        </mxCell>
+        <mxCell id="ml_zo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=0;fontFamily=Times New Roman;" value="ZOTrainer" vertex="1">
+          <mxGeometry height="44" width="260" x="760" y="265" as="geometry" />
+        </mxCell>
+        <mxCell id="band_rt" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8e0;strokeColor=#e0c860;opacity=45;fontFamily=Times New Roman;fontStyle=0" value="" vertex="1">
+          <mxGeometry height="80" width="1000" x="40" y="345" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_rt" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontStyle=0;fontSize=12;fontFamily=Times New Roman;" value="框架與&#xa;驅動" vertex="1">
+          <mxGeometry height="80" width="140" x="48" y="345" as="geometry" />
+        </mxCell>
+        <mxCell id="rt_tflm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="TFLite-Micro&#xa;+ CMSIS-NN / DSP" vertex="1">
+          <mxGeometry height="40" width="265" x="200" y="368" as="geometry" />
+        </mxCell>
+        <mxCell id="rt_ethos" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="Ethos-U NPU 驅動&#xa;(npu_init / profiler)" vertex="1">
+          <mxGeometry height="40" width="265" x="480" y="368" as="geometry" />
+        </mxCell>
+        <mxCell id="rt_bsp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="BSP 驅動&#xa;CCAP / EBI / UART / FMC / SPIM" vertex="1">
+          <mxGeometry height="40" width="260" x="760" y="368" as="geometry" />
+        </mxCell>
+        <mxCell id="band_hw" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fbe4e3;strokeColor=#e0a6a3;opacity=50;fontFamily=Times New Roman;fontStyle=0" value="" vertex="1">
+          <mxGeometry height="110" width="1000" x="40" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_hw" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontStyle=0;fontSize=12;fontFamily=Times New Roman;" value="硬體&#xa;Hardware" vertex="1">
+          <mxGeometry height="110" width="140" x="48" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_m55" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=0;fontFamily=Times New Roman;" value="Cortex-M55&lt;br&gt;@220MHz" vertex="1">
+          <mxGeometry height="70" width="195" x="200" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_npu" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=0;fontFamily=Times New Roman;" value="Ethos-U55&lt;br&gt;NPU" vertex="1">
+          <mxGeometry height="70" width="195" x="410" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_mem" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="記憶體&#xa;SRAM (arena) /&#xa;Flash (模型+快照) /&#xa;HyperRAM (選用)" vertex="1">
+          <mxGeometry height="70" width="195" x="620" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_peri" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="週邊&#xa;HM1055 相機 / LT7381 LCD /&#xa;UART6 / 按鍵" vertex="1">
+          <mxGeometry height="70" width="190" x="830" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="gHNFVsabcJCXz-Pe8e9W-1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontFamily=Times New Roman;fontStyle=0" value="螢幕 顯示圖片" vertex="1">
+          <mxGeometry height="34" width="300" x="730" y="83" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

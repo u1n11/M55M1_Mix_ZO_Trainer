@@ -16,3 +16,5 @@ SampleCode/MachineLearning/ImageClassification/Keil/Objects/*.dep
 SampleCode/MachineLearning/ImageClassification/Keil/Objects/*.lnp
 SampleCode/MachineLearning/ImageClassification/Keil/Objects/*.htm
 SampleCode/MachineLearning/ImageClassification/Keil/Objects/ExtDll.iex
+
+*.bkp

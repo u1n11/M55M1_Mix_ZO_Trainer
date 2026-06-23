@@ -569,6 +569,11 @@
               <FileType>8</FileType>
               <FilePath>..\Model\mbn-v2_w035_int8.tflite.cc</FilePath>
             </File>
+            <File>
+              <FileName>mbn-v2_w035.tflite.cc</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\Model\mbn-v2_w035.tflite.cc</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
