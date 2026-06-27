@@ -418,13 +418,24 @@ float ZOTrainer::TrainStep(arm::app::Model& /* classifierModel */, int targetLab
         float ws_c = (m_fcInfo.weight_scales_per_ch)
                      ? m_fcInfo.weight_scales_per_ch[c]
                      : m_fcInfo.weight_scale;
-        float qaScale_c = (ws_c > 1e-12f) ? (1.0f / (ws_c * ws_c)) : 1.0f;
-        float lr_c      = learningRate * normScale * qaScale_c / (float)Q;
+        /* SGD is taken in REAL weight space and then re-quantized to the stored
+         * INT8 grid: w_real -= lr·∂ℓ/∂w_real, so the INT8 step is the real step
+         * divided by the LSB size ws_c:
+         *   Δw_int = (lr·∂ℓ/∂w_real)/ws_c = (lr·gz·a_real)/ws_c    →  ×(1/ws_c).
+         * This is NOT ×ws_c (= int-space SGD Δq=lr·∂ℓ/∂q): with INT8 ws_c ≪ 1
+         * that made every step ~ws_c² too small, so delta_w rounded to 0 for all
+         * weights at every lr — frozen weights, delta_params=0, loss_after==before.
+         * The earlier 1/ws_c² railed the weights to ±127; 1/ws_c is the fix. */
+        float invWs_c = (ws_c > 1e-12f) ? (1.0f / ws_c) : 0.0f;
+        float lr_c    = learningRate * normScale * invWs_c / (float)Q;
 
         float gz = m_nodeGradBuf[c];
 
-        /* Bias update (INT32, unclamped per TFLite bias range) */
-        float db    = lr_c * gz;
+        /* Bias update (INT32, unclamped per TFLite bias range).
+         * bias_scale = ws_c·fS, and ∂ℓ/∂bias_real = gz, so the INT32 step is
+         * gz/(ws_c·fS) = (lr_c·gz)/fS — the weight branch keeps its fS inside
+         * a_real, the bias branch divides it back out. */
+        float db    = (fS > 1e-12f) ? (lr_c * gz / fS) : 0.0f;
         int delta_b = (int)(db >= 0.0f ? (db + 0.5f) : (db - 0.5f));
         m_mutableBias[c] -= delta_b;
 
