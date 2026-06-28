@@ -413,6 +413,21 @@ float ZOTrainer::TrainStep(arm::app::Model& /* classifierModel */, int targetLab
     const float fS  = m_fcInfo.feature_scale;
     const int   fZP = m_fcInfo.feature_zero_point;
 
+    /* Sub-LSB diagnostics: real-space feature RMS, and the float update sizes
+     * we *attempt* this step (before INT8 rounding). dw_max < 0.5 ⇒ no weight
+     * can move ⇒ lr is below the quantization grid (not a write-back bug).    */
+    double aSum2 = 0.0;
+    for (int f = 0; f < F; f++) {
+        float a_f = fS * (float)(m_featureCache[f] - fZP);
+        aSum2 += (double)a_f * a_f;
+    }
+    float aRms    = (F > 0) ? sqrtf((float)(aSum2 / (double)F)) : 0.0f;
+    float dwMax   = 0.0f;
+    double dwSum  = 0.0;
+    float dbMax   = 0.0f;
+    float lrEff   = 0.0f;
+    float gzMaxAb = -1.0f;
+
     /* ---- Apply weight and bias updates per output channel ---- */
     for (int c = 0; c < C; c++) {
         float ws_c = (m_fcInfo.weight_scales_per_ch)
@@ -431,11 +446,15 @@ float ZOTrainer::TrainStep(arm::app::Model& /* classifierModel */, int targetLab
 
         float gz = m_nodeGradBuf[c];
 
+        /* Track the lr_c of the strongest-gradient node for reporting. */
+        if (fabsf(gz) > gzMaxAb) { gzMaxAb = fabsf(gz); lrEff = lr_c; }
+
         /* Bias update (INT32, unclamped per TFLite bias range).
          * bias_scale = ws_c·fS, and ∂ℓ/∂bias_real = gz, so the INT32 step is
          * gz/(ws_c·fS) = (lr_c·gz)/fS — the weight branch keeps its fS inside
          * a_real, the bias branch divides it back out. */
         float db    = (fS > 1e-12f) ? (lr_c * gz / fS) : 0.0f;
+        if (fabsf(db) > dbMax) dbMax = fabsf(db);
         int delta_b = (int)(db >= 0.0f ? (db + 0.5f) : (db - 0.5f));
         m_mutableBias[c] -= delta_b;
 
@@ -443,6 +462,9 @@ float ZOTrainer::TrainStep(arm::app::Model& /* classifierModel */, int targetLab
         for (int f = 0; f < F; f++) {
             float a_f   = fS * (float)(m_featureCache[f] - fZP);
             float gw    = lr_c * gz * a_f;
+            float agw   = fabsf(gw);
+            if (agw > dwMax) dwMax = agw;
+            dwSum += (double)agw;
             int delta_w = (int)(gw >= 0.0f ? (gw + 0.5f) : (gw - 0.5f));
             int w_new   = (int)m_mutableWeights[c * F + f] - delta_w;
             if (w_new >  127) w_new =  127;
@@ -483,6 +505,12 @@ float ZOTrainer::TrainStep(arm::app::Model& /* classifierModel */, int targetLab
     m_metrics.loss_ema     = m_lossEma;
     m_metrics.delta_params = deltaParams;
     m_metrics.grad_norm    = gradNorm;
+    m_metrics.dw_max       = dwMax;
+    m_metrics.dw_mean      = (m_fcInfo.weight_bytes > 0)
+                             ? (float)(dwSum / (double)m_fcInfo.weight_bytes) : 0.0f;
+    m_metrics.db_max       = dbMax;
+    m_metrics.lr_eff       = lrEff;
+    m_metrics.a_rms        = aRms;
 
     m_stepCount++;
     m_lastLoss = lossClean;
@@ -566,10 +594,27 @@ float ZOTrainer::TrainStepWP(arm::app::Model& /* classifierModel */, int targetL
     const float normScale = (float)Q / ((float)Q + (float)dWP - 1.0f);
     const float step      = learningRate * normScale / (float)Q;
 
+    /* Sub-LSB diagnostics (same meaning as the NP path). a_rms over the cached
+     * feature; dw/db_max are the float updates attempted before INT8 rounding. */
+    const float fS  = m_fcInfo.feature_scale;
+    const int   fZP = m_fcInfo.feature_zero_point;
+    double aSum2 = 0.0;
+    for (int f = 0; f < F; f++) {
+        float a_f = fS * (float)(m_featureCache[f] - fZP);
+        aSum2 += (double)a_f * a_f;
+    }
+    float aRms   = (F > 0) ? sqrtf((float)(aSum2 / (double)F)) : 0.0f;
+    float dwMax  = 0.0f;
+    double dwSum = 0.0;
+    float dbMax  = 0.0f;
+
     /* ---- Apply averaged update directly in INT8 / INT32 LSB space ----
      * No qaScale here: m_weightGradBuf already holds ∂ℓ/∂w in per-LSB units. */
     for (int i = 0; i < D; i++) {
         float gw    = step * m_weightGradBuf[i];
+        float agw   = fabsf(gw);
+        if (agw > dwMax) dwMax = agw;
+        dwSum += (double)agw;
         int delta_w = (int)(gw >= 0.0f ? (gw + 0.5f) : (gw - 0.5f));
         int w_new   = (int)m_mutableWeights[i] - delta_w;
         if (w_new >  127) w_new =  127;
@@ -578,6 +623,7 @@ float ZOTrainer::TrainStepWP(arm::app::Model& /* classifierModel */, int targetL
     }
     for (int c = 0; c < C; c++) {
         float gb    = step * m_nodeGradBuf[c];
+        if (fabsf(gb) > dbMax) dbMax = fabsf(gb);
         int delta_b = (int)(gb >= 0.0f ? (gb + 0.5f) : (gb - 0.5f));
         m_mutableBias[c] -= delta_b;
     }
@@ -605,10 +651,85 @@ float ZOTrainer::TrainStepWP(arm::app::Model& /* classifierModel */, int targetL
     m_metrics.loss_ema     = m_lossEma;
     m_metrics.delta_params = deltaParams;
     m_metrics.grad_norm    = gradNorm;
+    m_metrics.dw_max       = dwMax;
+    m_metrics.dw_mean      = (m_fcInfo.weight_bytes > 0)
+                             ? (float)(dwSum / (double)m_fcInfo.weight_bytes) : 0.0f;
+    m_metrics.db_max       = dbMax;
+    m_metrics.lr_eff       = step; /* WP shares one scalar step across all params */
+    m_metrics.a_rms        = aRms;
 
     m_stepCount++;
     m_lastLoss = lossClean;
     return lossClean;
+}
+
+/* ------------------------------------------------------------------ */
+/*  PrintSTheta — per-channel weight scale diagnostics for lr tuning  */
+/* ------------------------------------------------------------------ */
+void ZOTrainer::PrintSTheta(bool featureCached, int nomQ) const
+{
+    if (!m_inited) {
+        printf_err("[ZO] PrintSTheta: not initialized\r\n");
+        return;
+    }
+
+    const int   C   = m_fcInfo.output_classes;
+    const int   F   = m_fcInfo.input_features;
+    const float fS  = m_fcInfo.feature_scale;
+    const int   fZP = m_fcInfo.feature_zero_point;
+
+    info("[ZO] === s_theta diagnostics (FC %d x %d) ===\r\n", F, C);
+
+    /* Feature RMS (real float space): a_rms = fS * rms(a_int - fZP) */
+    float feat_rms = 0.0f;
+    if (featureCached && m_featureCache) {
+        float sum2 = 0.0f;
+        for (int f = 0; f < F; f++) {
+            float a_f = fS * (float)(m_featureCache[f] - fZP);
+            sum2 += a_f * a_f;
+        }
+        feat_rms = sqrtf(sum2 / (float)F);
+        info("[ZO]  feature RMS  a_rms = %.6f  (fS=%.6f  fZP=%d)\r\n",
+             feat_rms, fS, fZP);
+    }
+
+    /* GNS normScale for the nominal Q (NP path: d=C) */
+    const float ns = (float)nomQ / ((float)nomQ + (float)C - 1.0f);
+
+    /* Per-channel s_theta_c = ws_c * rms(w_int - zp) */
+    float global_sum2 = 0.0f;
+
+    for (int c = 0; c < C; c++) {
+        float ws_c = (m_fcInfo.weight_scales_per_ch)
+                     ? m_fcInfo.weight_scales_per_ch[c]
+                     : m_fcInfo.weight_scale;
+
+        float sum2 = 0.0f;
+        for (int f = 0; f < F; f++) {
+            float w_real = ws_c * (float)(m_mutableWeights[c * F + f]
+                                         - m_fcInfo.weight_zero_point);
+            sum2 += w_real * w_real;
+        }
+        float s_theta_c = sqrtf(sum2 / (float)F);
+        global_sum2 += sum2;
+
+        if (featureCached && feat_rms > 1e-12f) {
+            /* Minimum lr for >=1 INT8 weight change in this channel (NP path):
+             *   |delta_w_int| = round(lr * ns/Q * invWs_c * gz * a_f) >= 0.5
+             * Lower-bounding |gz| ~ 1 (single Rademacher-loss product):
+             *   lr_min = 0.5 * Q * ws_c / (ns * a_rms)                        */
+            float lr_min = 0.5f * (float)nomQ * ws_c / (ns * feat_rms);
+            info("[ZO]  ch%2d  ws=%.6f  s_theta_c=%.6f  lr_min(Q=%d)=%.4e\r\n",
+                 c, ws_c, s_theta_c, nomQ, lr_min);
+        } else {
+            info("[ZO]  ch%2d  ws=%.6f  s_theta_c=%.6f\r\n",
+                 c, ws_c, s_theta_c);
+        }
+    }
+
+    float s_theta_global = sqrtf(global_sum2 / (float)(C * F));
+    info("[ZO]  global s_theta = %.6f\r\n", s_theta_global);
+    info("[ZO] ================================================\r\n");
 }
 
 /* ------------------------------------------------------------------ */

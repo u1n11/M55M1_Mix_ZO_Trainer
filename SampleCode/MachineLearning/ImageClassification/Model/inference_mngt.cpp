@@ -1256,6 +1256,16 @@ static void DoZOTrain(void)
          elapsed_us / 1000.0f,
          zoTrainer->GetMemoryUsed());
 
+    /* Sub-LSB diagnostics: if dw_max < 0.5 the whole step is below the INT8 grid
+     * so no weight can move — that is "lr too small", not a broken write-back.
+     * a_rms/lr_eff let you back out the lr needed to cross 0.5. */
+    info_critical("[FRAME: %u] [ZO]   dw_max=%.4f (need>=0.5) | dw_mean=%.4f | db_max=%.4f | "
+                  "lr_eff=%.6e | a_rms=%.4f | %s\r\n",
+         inferenceFrameCount,
+         m.dw_max, m.dw_mean, m.db_max,
+         m.lr_eff, m.a_rms,
+         (m.dw_max < 0.5f) ? "[SUB-LSB: weights frozen, raise lr]" : "[weights moving]");
+
     info_if_token(LOG_ZO_TRAINING, "[ZO] Snapshot not auto-saved. Send 'zo_save' to persist to APROM flash.\r\n");
 
     /* Unfreeze frameBuffer after training completes */

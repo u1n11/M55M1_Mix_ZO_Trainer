@@ -84,6 +84,17 @@ static void Cmd_ZOSave(void)
         printf_err("[ZO] Manual save to flash failed\r\n");
     }
 }
+
+static void Cmd_ZOSTheta(void)
+{
+    if (!zoTrainer || !zoTrainer->IsInitialized()) {
+        info("[ZO] Trainer not initialized — send 'zo_init' first\r\n");
+        return;
+    }
+    /* featureCached: true if at least one tra= step ran (CacheFeature was called) */
+    bool featureCached = (zoTrainer->GetStepCount() > 0);
+    zoTrainer->PrintSTheta(featureCached, zoNumPerturbations);
+}
 #endif /* USE_SPLIT_MODEL */
 
 /* ------------------------------------------------------------------ */
@@ -111,6 +122,7 @@ const CmdEntry g_cmd_table[] = {
     { "zo_reset",    Cmd_ZOReset    },
     { "zo_status",   Cmd_ZOStatus   },
     { "zo_save",     Cmd_ZOSave     },
+    { "zo_stheta",   Cmd_ZOSTheta   },
 #endif /* USE_SPLIT_MODEL */
     { "reboot",      Cmd_Restart    },  /* Both modes: software MCU reset */
     { NULL,          NULL }        /* Terminator */

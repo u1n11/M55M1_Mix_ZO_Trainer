@@ -109,7 +109,56 @@ ZO Node Perturbation 只擾動最後一層 FC 的 **C=10 個 logit 節點**：
 
 ---
 
-## 五、ZO Scratch 配置流程總覽
+## 五、NP vs WP 訓練步驟實際存取的記憶體
+
+兩個方法共用同一份由 `Init()` 分配的 31,968 B scratch buffer，  
+但每次 `TrainStep` / `TrainStepWP` 呼叫時實際**碰到**的分段不同。
+
+> `m_originalWeights`（4,480 B）與 `m_originalBias`（40 B）在訓練步驟中**完全不存取**，  
+> 僅 `Reset()` 和 `LoadFromSnapshot()` 才讀寫。
+
+### 5.1 各分段存取對照表
+
+| 分段 | 大小 | NP `TrainStep` | WP `TrainStepWP` |
+|------|------|:--------------:|:----------------:|
+| `m_mutableWeights` | 4,480 B | ✓ 讀寫 | ✓ 讀寫 |
+| `m_mutableBias` | 40 B | ✓ 讀寫 | ✓ 讀寫 |
+| `m_originalWeights` | 4,480 B | ✗ 不碰 | ✗ 不碰 |
+| `m_originalBias` | 40 B | ✗ 不碰 | ✗ 不碰 |
+| `m_stepSnapshot` | 4,480 B | ✓ 寫入+比較 | ✓ 寫入+比較+還原 |
+| `m_featureCache` | 448 B | ✓ 讀取 | ✓ 讀取 |
+| `m_nodeGradBuf` | 40 B | ✓ 梯度累加 | ✓ bias 梯度累加 |
+| `m_weightGradBuf` | 17,920 B | **✗ 不碰** | **✓ 權重梯度累加** |
+| `weight_scales_per_ch` | 40 B | ✓ 讀取 | ✓ 讀取 |
+| stack 暫存（`nodeOffset` / `biasSnap`） | 40 B | ✓ | ✓ |
+
+### 5.2 實際存取量
+
+| | NP（`TrainStep`） | WP（`TrainStepWP`） |
+|---|---|---|
+| scratch 存取 | 4,480 + 40 + 4,480 + 448 + 40 + 40 = **9,528 B** | 9,528 + 17,920 = **27,448 B** |
+| stack 暫存 | `nodeOffset[10]` = **40 B** | `biasSnap[10]` = **40 B** |
+| **合計** | **9,568 B（≈ 9.3 KB）** | **27,488 B（≈ 26.8 KB）** |
+
+WP 比 NP 多 **17,920 B（= C×F×4 = `m_weightGradBuf`）**，  
+這正是 WP 需要對 C×F 個權重各自累加梯度估計的代價。  
+NP 不需要這個緩衝，因為它用解析式 ∇W = ∇z·aᵀ 直接在更新迴圈中計算，  
+∇z 只有 C=10 個元素，存在 `m_nodeGradBuf`（40 B）就夠了。
+
+### 5.3 各緩衝區在程式碼中的存取位置
+
+| 分段 | NP 存取位置 | WP 存取位置 |
+|------|-------------|-------------|
+| `m_mutableWeights` | :374（快照）、:332（loss）、:469–473（更新） | :538（快照）、:557–560（擾動）、:580（還原）、:619–622（更新） |
+| `m_mutableBias` | :338（loss）、:459（更新） | :563（擾動）、:581（還原）、:627–629（更新） |
+| `m_stepSnapshot` | :374（寫）、:484–486（比較） | :538（寫）、:580（還原）、:633–635（比較） |
+| `m_featureCache` | :421、:463（讀） | :602、:618（讀） |
+| `m_nodeGradBuf` | :380（清零）、:399（累加）、:405、:447（讀） | :547（清零）、:574（累加）、:585、:624（讀） |
+| `m_weightGradBuf` | **不存取** | :546（清零）、:572（累加）、:613（讀） |
+
+---
+
+## 六、ZO Scratch 配置流程總覽
 
 ```
 Init() 呼叫流程（ZOTrainer.cpp:61–288）

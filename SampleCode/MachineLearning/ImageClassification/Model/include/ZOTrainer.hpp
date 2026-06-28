@@ -52,6 +52,17 @@ public:
         float loss_ema;      /**< EMA of loss_before, smoothing α=0.1             */
         float delta_params;  /**< Fraction [0,1] of INT8 weights that changed     */
         float grad_norm;     /**< L2 norm of the ZO node-gradient estimate        */
+
+        /* ---- Sub-LSB diagnostics: why the INT8 weights do/don't move ---- *
+         * The INT8 update is round(dw). If dw_max < 0.5 the step is entirely
+         * sub-LSB and NO weight can change regardless of grad_norm — the lr is
+         * simply below the quantization grid for this layer. Compare dw_max
+         * against 0.5 to tell "lr too small" from "write-back broken".         */
+        float dw_max;        /**< Max |Δw| (float, pre-rounding) over all weights */
+        float dw_mean;       /**< Mean |Δw| (float, pre-rounding) over weights    */
+        float db_max;        /**< Max |Δbias| (float, pre-rounding) over channels */
+        float lr_eff;        /**< Effective per-ch lr_c at the strongest-grad node*/
+        float a_rms;         /**< Real-space RMS of the cached FC input feature   */
     };
 
     /** @brief  EMA smoothing factor for loss reporting (host-agnostic). */
@@ -136,6 +147,19 @@ public:
     size_t         GetMemoryUsed()  const { return m_memUsed; }
     const int8_t*  GetMutableWeights() const { return m_mutableWeights; }
     const int32_t* GetMutableBias()    const { return m_mutableBias; }
+
+    /**
+     * @brief  Print s_theta diagnostics for lr calibration.
+     *
+     * Prints per-channel weight quantization scale ws_c, the real-space RMS of
+     * each output channel's weights (s_theta_c), the global s_theta across all
+     * weights, and — if featureCached is true — the feature RMS and the derived
+     * minimum LR per channel needed to produce at least one non-zero INT8 update
+     * (for Q=nomQ perturbations).
+     *
+     * Call after Init(); set featureCached=true only after CacheFeature().
+     */
+    void PrintSTheta(bool featureCached = false, int nomQ = 50) const;
 
     /**
      * @brief  Overwrite mutable/original FC parameters from an external snapshot.
